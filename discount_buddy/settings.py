@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "users",
     "vouchers",
     "wallet",
+    "restaurants",
     # "orders",
     # "marketplace",
 ]

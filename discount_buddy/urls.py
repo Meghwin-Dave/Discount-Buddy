@@ -22,6 +22,7 @@ urlpatterns = [
     path("api/users/", include("users.urls")),
     path("api/vouchers/", include("vouchers.urls")),
     path("api/wallet/", include("wallet.urls")),
+    path("api/restaurants/", include("restaurants.urls")),
     # path("api/orders/", include("orders.urls")),
     # path("api/marketplace/", include("marketplace.urls")),
     path(
