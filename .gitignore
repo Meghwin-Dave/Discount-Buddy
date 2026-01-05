@@ -101,7 +101,7 @@ coverage.xml
 *.cover
 
 # Django migrations (not meant to be committed)
-users/migrations/
-vouchers/migrations/
-wallet/migrations/
+# users/migrations/
+# vouchers/migrations/
+# wallet/migrations/
 
