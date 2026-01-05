@@ -3,7 +3,7 @@ from .models import (
     Country, City, RestaurantCategory, Restaurant, Deal,
     RestaurantImage, DealImage, SavedRestaurant, SavedDeal, DealUse
 )
-
+from wallet.models import Wallet, WalletTransaction
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
