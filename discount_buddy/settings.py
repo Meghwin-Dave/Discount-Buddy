@@ -2,11 +2,16 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file at project root (if present)
+load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
 
-DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
@@ -66,12 +71,12 @@ if os.environ.get("DB_ENGINE", "sqlite") == "postgres":
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("POSTGRES_DB", "discountbuddy"),
-            "USER": os.environ.get("POSTGRES_USER", "discountbuddy"),
-            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "discountbuddy"),
+            "NAME": os.environ.get("discountbuddy", "discountbuddy"),
+            "USER": os.environ.get("admin", "admin"),
+            "PASSWORD": os.environ.get("1234", "1234"),
             # For Docker use POSTGRES_HOST=db; for local Postgres override to localhost explicitly
-            "HOST": os.environ.get("POSTGRES_HOST", "db"),
-            "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+            "HOST": os.environ.get("localhost", "localhost"),
+            "PORT": os.environ.get("5432", "5432"),
         }
     }
 else:
@@ -142,17 +147,30 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": os.environ.get("REDIS_URL", "redis://redis:6379/1"),
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
+# Cache configuration
+# Use Redis in production, local memory cache in development
+if DEBUG or not os.environ.get("REDIS_URL"):
+    # Use local memory cache for development
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "unique-snowflake",
+        }
     }
-}
-
-SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+    # Use database sessions in development (no Redis needed)
+    SESSION_ENGINE = "django.contrib.sessions.backends.db"
+else:
+    # Use Redis in production
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": os.environ.get("REDIS_URL", "redis://redis:6379/1"),
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+        }
+    }
+    SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
 
 LOGGING = {
     "version": 1,
@@ -177,8 +195,10 @@ LOGGING = {
 
 # Security settings for production, overridable by env
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "True").lower() == "true"
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "true"
+# In development (DEBUG=True), cookies don't need to be secure (HTTP is fine)
+# In production (DEBUG=False), cookies should be secure (HTTPS only)
+CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "False" if DEBUG else "True").lower() == "true"
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "False" if DEBUG else "True").lower() == "true"
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 
