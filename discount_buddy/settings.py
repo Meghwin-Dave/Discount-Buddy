@@ -13,7 +13,8 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+# ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOmake documentatSTS", "*").split(",")
+ALLOWED_HOSTS = ["16.171.196.144", "ec2-16-171-196-144.eu-north-1.compute.amazonaws.com"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -201,5 +202,20 @@ CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "False" if DEBUG else 
 SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "False" if DEBUG else "True").lower() == "true"
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Swagger/OpenAPI settings
+SWAGGER_SETTINGS = {
+    "SECURITY_DEFINITIONS": {
+        "Bearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "name": "Authorization",
+            "description": "Bearer token authentication. Format: 'Bearer <token>'",
+            "in": "header",
+        }
+    },
+    "USE_SESSION_AUTH": False,
+}
 
 

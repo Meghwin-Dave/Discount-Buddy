@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import UserProfile
 
@@ -18,6 +20,27 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("id", "email", "username", "is_merchant", "is_customer", "profile")
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Custom serializer to add username, role, and current date to login response"""
+    
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        
+        # Add username
+        data['username'] = self.user.username
+        
+        # Add role from user profile
+        try:
+            data['role'] = self.user.profile.role
+        except UserProfile.DoesNotExist:
+            data['role'] = None
+        
+        # Add current date
+        data['current_date'] = timezone.now().isoformat()
+        
+        return data
 
 
 class RegisterSerializer(serializers.ModelSerializer):
