@@ -104,8 +104,8 @@ sudo -u postgres psql
 Inside the PostgreSQL shell, run:
 ```sql
 CREATE DATABASE discountbuddy;
-CREATE USER postgres WITH PASSWORD '1234';
-GRANT ALL PRIVILEGES ON DATABASE discountbuddy TO postgres;
+CREATE USER admin WITH PASSWORD '1234';
+GRANT ALL PRIVILEGES ON DATABASE discountbuddy TO admin;
 \q
 ```
 

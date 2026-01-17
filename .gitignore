@@ -100,3 +100,8 @@ htmlcov/
 coverage.xml
 *.cover
 
+# Django migrations (not meant to be committed)
+# users/migrations/
+# vouchers/migrations/
+# wallet/migrations/
+
