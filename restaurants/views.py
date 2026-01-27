@@ -681,8 +681,8 @@ class RestaurantDetailViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
-    @action(detail=True, methods=["post", "delete"], permission_classes=[IsUser])
-    def favourite(self, request, pk=None):
+    @action(detail=True, methods=["post", "delete"], permission_classes=[IsUser], url_path="favourite")
+    def favourite(self, request, slug=None):
         """Toggle favourite status"""
         restaurant = self.get_object()
         
