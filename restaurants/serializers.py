@@ -75,7 +75,22 @@ class RestaurantImageSerializer(serializers.ModelSerializer):
 
 class RestaurantSerializer(serializers.ModelSerializer):
     city = CitySerializer(read_only=True)
+    city_id = serializers.PrimaryKeyRelatedField(
+        queryset=City.objects.filter(is_active=True),
+        source='city',
+        write_only=True,
+        required=True,
+        help_text="ID of the city where the restaurant is located"
+    )
     categories = RestaurantCategorySerializer(many=True, read_only=True)
+    category_ids = serializers.PrimaryKeyRelatedField(
+        queryset=RestaurantCategory.objects.all(),
+        source='categories',
+        many=True,
+        write_only=True,
+        required=False,
+        help_text="List of category IDs"
+    )
     images = RestaurantImageSerializer(many=True, read_only=True)
     active_deals_count = serializers.IntegerField(read_only=True)
     is_saved = serializers.SerializerMethodField()
@@ -83,17 +98,65 @@ class RestaurantSerializer(serializers.ModelSerializer):
     class Meta:
         model = Restaurant
         fields = (
-            "id", "name", "slug", "description", "city", "address", "postcode",
-            "latitude", "longitude", "phone", "email", "website", "categories",
+            "id", "name", "slug", "description", "city_id", "city", "address", "postcode",
+            "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
             "price_range", "verified", "is_featured", "opening_hours",
             "images", "active_deals_count", "is_saved", "created_at"
         )
+        read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "images")
         
     def get_is_saved(self, obj):
         request = self.context.get("request")
         if request and request.user.is_authenticated:
             return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
         return False
+    
+    def create(self, validated_data):
+        # Auto-generate slug from name if not provided
+        if 'slug' not in validated_data or not validated_data.get('slug'):
+            from django.utils.text import slugify
+            name = validated_data.get('name', '')
+            base_slug = slugify(name)
+            slug = base_slug
+            counter = 1
+            while Restaurant.objects.filter(slug=slug).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            validated_data['slug'] = slug
+        
+        # Handle categories if provided
+        categories = validated_data.pop('categories', [])
+        restaurant = Restaurant.objects.create(**validated_data)
+        
+        if categories:
+            restaurant.categories.set(categories)
+        
+        return restaurant
+    
+    def update(self, instance, validated_data):
+        # Handle categories if provided
+        categories = validated_data.pop('categories', None)
+        
+        # Auto-update slug if name changed
+        if 'name' in validated_data and validated_data['name'] != instance.name:
+            from django.utils.text import slugify
+            name = validated_data['name']
+            base_slug = slugify(name)
+            slug = base_slug
+            counter = 1
+            while Restaurant.objects.filter(slug=slug).exclude(pk=instance.pk).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            validated_data['slug'] = slug
+        
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        if categories is not None:
+            instance.categories.set(categories)
+        
+        return instance
 
 
 class RestaurantListSerializer(serializers.ModelSerializer):

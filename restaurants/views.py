@@ -391,13 +391,30 @@ class MerchantRestaurantViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "created_at"]
     ordering = ["-created_at"]
     
+    def get_merchant(self):
+        """Get or create Merchant instance for the current user"""
+        from vouchers.models import Merchant
+        from users.models import UserProfile
+        
+        # Check if user has merchant role
+        try:
+            if self.request.user.profile.role != UserProfile.ROLE_MERCHANT:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("User is not a merchant.")
+        except UserProfile.DoesNotExist:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("User profile not found.")
+        
+        # Get or create Merchant instance
+        merchant, created = Merchant.objects.get_or_create(
+            user=self.request.user,
+            defaults={'name': self.request.user.username or self.request.user.email}
+        )
+        return merchant
+    
     def get_queryset(self):
         # Get merchant's restaurants
-        try:
-            merchant = self.request.user.merchant
-        except:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Merchant profile not found. Please create a merchant account.")
+        merchant = self.get_merchant()
         return Restaurant.objects.filter(
             merchant=merchant
         ).select_related("city", "city__country").prefetch_related(
@@ -415,11 +432,7 @@ class MerchantRestaurantViewSet(viewsets.ModelViewSet):
         )
     
     def perform_create(self, serializer):
-        try:
-            merchant = self.request.user.merchant
-        except:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Merchant profile not found. Please create a merchant account.")
+        merchant = self.get_merchant()
         serializer.save(merchant=merchant)
 
 
@@ -433,24 +446,37 @@ class MerchantDealViewSet(viewsets.ModelViewSet):
     ordering_fields = ["start_date", "end_date", "created_at"]
     ordering = ["-created_at"]
     
+    def get_merchant(self):
+        """Get or create Merchant instance for the current user"""
+        from vouchers.models import Merchant
+        from users.models import UserProfile
+        
+        # Check if user has merchant role
+        try:
+            if self.request.user.profile.role != UserProfile.ROLE_MERCHANT:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("User is not a merchant.")
+        except UserProfile.DoesNotExist:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("User profile not found.")
+        
+        # Get or create Merchant instance
+        merchant, created = Merchant.objects.get_or_create(
+            user=self.request.user,
+            defaults={'name': self.request.user.username or self.request.user.email}
+        )
+        return merchant
+    
     def get_queryset(self):
         # Get deals for merchant's restaurants
-        try:
-            merchant = self.request.user.merchant
-        except:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Merchant profile not found. Please create a merchant account.")
+        merchant = self.get_merchant()
         return Deal.objects.filter(
             restaurant__merchant=merchant
         ).select_related("restaurant").prefetch_related("images")
     
     def perform_create(self, serializer):
         restaurant_id = self.request.data.get("restaurant")
-        try:
-            merchant = self.request.user.merchant
-        except:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Merchant profile not found. Please create a merchant account.")
+        merchant = self.get_merchant()
         
         # Verify restaurant belongs to merchant
         try:

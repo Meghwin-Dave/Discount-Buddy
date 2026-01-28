@@ -25,6 +25,23 @@ class UserSerializer(serializers.ModelSerializer):
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Custom serializer to add username, role, and current date to login response"""
     
+    @classmethod
+    def get_token(cls, user):
+        """Add custom claims to the token payload"""
+        token = super().get_token(user)
+        
+        # Add role to token payload
+        try:
+            token['role'] = user.profile.role
+        except UserProfile.DoesNotExist:
+            token['role'] = None
+        
+        # Add is_merchant and is_customer flags to token payload
+        token['is_merchant'] = user.is_merchant
+        token['is_customer'] = user.is_customer
+        
+        return token
+    
     def validate(self, attrs):
         data = super().validate(attrs)
         
@@ -63,6 +80,15 @@ class RegisterSerializer(serializers.ModelSerializer):
             user.is_customer = False
         user.save()
         UserProfile.objects.create(user=user, role=role)
+        
+        # Auto-create Merchant instance for merchant users
+        if role == UserProfile.ROLE_MERCHANT:
+            from vouchers.models import Merchant
+            Merchant.objects.get_or_create(
+                user=user,
+                defaults={'name': user.username or user.email}
+            )
+        
         return user
 
 
