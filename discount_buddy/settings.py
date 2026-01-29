@@ -50,6 +50,8 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "discount_buddy.urls"
 
+APPEND_SLASH = False
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
