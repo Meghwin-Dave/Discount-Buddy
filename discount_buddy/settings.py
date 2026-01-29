@@ -135,15 +135,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
 
-# Google OAuth – from client_secret JSON (web client)
-GOOGLE_OAUTH_CLIENT_ID = os.environ.get(
-    "GOOGLE_OAUTH_CLIENT_ID",
-    "1019573233560-fek4q2bgo1i4rssdgm4pme2b80dj1lim.apps.googleusercontent.com",
-)
-GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get(
-    "GOOGLE_OAUTH_CLIENT_SECRET",
-    "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",
-)
+# Google OAuth – set in .env (never commit real values)
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
 
 # django-allauth
 AUTHENTICATION_BACKENDS = [
