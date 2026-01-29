@@ -1,6 +1,12 @@
 from django.urls import path
 
-from .views import RegisterView, MeView, LoginView, RefreshTokenView
+from .views import (
+    RegisterView,
+    MeView,
+    LoginView,
+    RefreshTokenView,
+    GoogleIdTokenLoginView,
+)
 
 urlpatterns = [
     path("register", RegisterView.as_view(), name="register"),
@@ -8,6 +14,7 @@ urlpatterns = [
     path("me", MeView.as_view(), name="me"),
     path("token", LoginView.as_view(), name="token_obtain_pair"),
     path("token/refresh", RefreshTokenView.as_view(), name="token_refresh"),
+    path("google", GoogleIdTokenLoginView.as_view(), name="google_id_token_login"),
 ]
 
 
