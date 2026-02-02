@@ -3,12 +3,21 @@
 ## 🔐 Authentication
 
 ```bash
-# Register
-POST /api/users/register/
+# User Register
+POST /user/api/users/register/
 Body: {"email": "...", "username": "...", "password": "...", "role": "customer"}
 
-# Login
-POST /api/users/token/
+# User Login
+POST /user/api/users/token/
+Body: {"email": "...", "password": "..."}
+Response: {"access": "...", "refresh": "..."}
+
+# Merchant Register
+POST /merchant/api/users/register/
+Body: {"email": "...", "username": "...", "password": "...", "role": "merchant"}
+
+# Merchant Login
+POST /merchant/api/users/token/
 Body: {"email": "...", "password": "..."}
 Response: {"access": "...", "refresh": "..."}
 
@@ -22,16 +31,16 @@ Header: Authorization: Bearer <access_token>
 
 | Step | Method | Endpoint | Auth |
 |------|--------|----------|------|
-| 1. Register | POST | `/api/users/register/` | No |
-| 2. Login | POST | `/api/users/token/` | No |
-| 3. Home Screen | GET | `/api/restaurants/home/` | Optional |
-| 4. Restaurant Detail | GET | `/api/restaurants/restaurant-detail/{slug}/` | No |
-| 5. Add Favourite | POST | `/api/restaurants/restaurant-detail/{slug}/favourite/` | Yes |
-| 6. Create Booking | POST | `/api/restaurants/bookings/` | Yes |
-| 7. Add Review | POST | `/api/restaurants/reviews/` | Yes |
-| 8. View Deals | GET | `/api/restaurants/deals/` | No |
-| 9. Claim Deal | POST | `/api/restaurants/deals/{id}/use/` | Yes |
-| 10. Profile Stats | GET | `/api/restaurants/profile/stats/` | Yes |
+| 1. Register | POST | `/user/api/users/register/` | No |
+| 2. Login | POST | `/user/api/users/token/` | No |
+| 3. Home Screen | GET | `/user/api/restaurants/home/` | Optional |
+| 4. Restaurant Detail | GET | `/user/api/restaurants/restaurant-detail/{slug}/` | No |
+| 5. Add Favourite | POST | `/user/api/restaurants/restaurant-detail/{slug}/favourite/` | Yes |
+| 6. Create Booking | POST | `/user/api/restaurants/bookings/` | Yes |
+| 7. Add Review | POST | `/user/api/restaurants/reviews/` | Yes |
+| 8. View Deals | GET | `/user/api/restaurants/deals/` | No |
+| 9. Claim Deal | POST | `/user/api/restaurants/deals/{id}/use/` | Yes |
+| 10. Profile Stats | GET | `/user/api/restaurants/profile/stats/` | Yes |
 
 ---
 
@@ -39,60 +48,64 @@ Header: Authorization: Bearer <access_token>
 
 | Step | Method | Endpoint | Auth |
 |------|--------|----------|------|
-| 1. Register (Merchant) | POST | `/api/users/register/` (role: "merchant") | No |
-| 2. Login | POST | `/api/users/token/` | No |
-| 3. Create Restaurant | POST | `/api/restaurants/restaurant/manage/` | Yes |
-| 4. Add Opening Slots | POST | `/api/restaurants/restaurant/opening-slots/` | Yes |
-| 5. Add Menu Category | POST | `/api/restaurants/restaurant/menu/` | Yes |
-| 6. Create Deal | POST | `/api/restaurants/merchant/deals/` | Yes |
-| 7. View Reviews | GET | `/api/restaurants/restaurant/reviews/` | Yes |
-| 8. View Bookings | GET | `/api/restaurants/restaurant/bookings/` | Yes |
+| 1. Register (Merchant) | POST | `/merchant/api/users/register/` (role: "merchant") | No |
+| 2. Login | POST | `/merchant/api/users/token/` | No |
+| 3. Create Restaurant | POST | `/merchant/api/restaurants/restaurant/manage/` | Yes |
+| 4. Add Opening Slots | POST | `/merchant/api/restaurants/restaurant/opening-slots/` | Yes |
+| 5. Add Menu Category | POST | `/merchant/api/restaurants/restaurant/menu/` | Yes |
+| 6. Create Deal | POST | `/merchant/api/restaurants/merchant/deals/` | Yes |
+| 7. View Reviews | GET | `/merchant/api/restaurants/restaurant/reviews/` | Yes |
+| 8. View Bookings | GET | `/merchant/api/restaurants/restaurant/bookings/` | Yes |
 
 ---
 
 ## 📋 All Endpoints
 
 ### Authentication
-- `POST /api/users/register/` - Register user/restaurant
-- `POST /api/users/token/` - Login (get JWT)
-- `POST /api/users/token/refresh/` - Refresh token
-- `GET /api/users/me/` - Get profile
+- `POST /user/api/users/register/` - Register user
+- `POST /user/api/users/token/` - User login (get JWT)
+- `POST /user/api/users/token/refresh/` - Refresh token
+- `GET /user/api/users/me/` - Get user profile
+- `POST /merchant/api/users/register/` - Register merchant
+- `POST /merchant/api/users/token/` - Merchant login (get JWT)
+- `POST /merchant/api/users/token/refresh/` - Refresh token
+- `GET /merchant/api/users/me/` - Get merchant profile
 
-### Public
-- `GET /api/restaurants/home/` - Home screen
-- `GET /api/restaurants/restaurants/` - List restaurants
-- `GET /api/restaurants/restaurant-detail/{slug}/` - Restaurant detail
-- `GET /api/restaurants/deals/` - List deals
-- `GET /api/restaurants/cities/` - List cities
-- `GET /api/restaurants/countries/` - List countries
-- `GET /api/restaurants/cuisines/` - List cuisines
-- `GET /api/restaurants/categories/` - List categories
-- `GET /api/restaurants/reviews/` - List reviews
+### Public (User-facing)
+- `GET /user/api/restaurants/home/` - Home screen
+- `GET /user/api/restaurants/restaurants/` - List restaurants
+- `GET /user/api/restaurants/restaurant-detail/{slug}/` - Restaurant detail
+- `GET /user/api/restaurants/deals/` - List deals
+- `GET /user/api/restaurants/cities/` - List cities
+- `GET /user/api/restaurants/countries/` - List countries
+- `GET /user/api/restaurants/cuisines/` - List cuisines
+- `GET /user/api/restaurants/categories/` - List categories
+- `GET /user/api/restaurants/reviews/` - List reviews
 
 ### User (Authenticated)
-- `POST /api/restaurants/reviews/` - Add review
-- `GET /api/restaurants/bookings/` - List bookings
-- `POST /api/restaurants/bookings/` - Create booking
-- `POST /api/restaurants/bookings/{id}/cancel/` - Cancel booking
-- `POST /api/restaurants/deals/{id}/use/` - Claim deal
-- `GET /api/restaurants/deal-uses/` - View claimed deals
-- `GET /api/restaurants/profile/stats/` - Profile stats
-- `POST /api/restaurants/restaurant-detail/{slug}/favourite/` - Add favourite
-- `DELETE /api/restaurants/restaurant-detail/{slug}/favourite/` - Remove favourite
+- `POST /user/api/restaurants/reviews/` - Add review
+- `GET /user/api/restaurants/bookings/` - List bookings
+- `POST /user/api/restaurants/bookings/` - Create booking
+- `POST /user/api/restaurants/bookings/{id}/cancel/` - Cancel booking
+- `POST /user/api/restaurants/deals/{id}/use/` - Claim deal
+- `GET /user/api/restaurants/deal-uses/` - View claimed deals
+- `GET /user/api/restaurants/profile/stats/` - Profile stats
+- `POST /user/api/restaurants/restaurant-detail/{slug}/favourite/` - Add favourite
+- `DELETE /user/api/restaurants/restaurant-detail/{slug}/favourite/` - Remove favourite
 
 ### Restaurant Management (Merchant)
-- `GET /api/restaurants/restaurant/manage/` - List restaurants
-- `POST /api/restaurants/restaurant/manage/` - Create restaurant
-- `PUT /api/restaurants/restaurant/manage/{id}/` - Update restaurant
-- `DELETE /api/restaurants/restaurant/manage/{id}/` - Delete restaurant
-- `GET /api/restaurants/restaurant/menu/` - List menu categories
-- `POST /api/restaurants/restaurant/menu/` - Create menu category
-- `GET /api/restaurants/restaurant/opening-slots/` - List opening slots
-- `POST /api/restaurants/restaurant/opening-slots/` - Create opening slot
-- `GET /api/restaurants/merchant/deals/` - List deals
-- `POST /api/restaurants/merchant/deals/` - Create deal
-- `GET /api/restaurants/restaurant/reviews/` - View reviews
-- `GET /api/restaurants/restaurant/bookings/` - View bookings
+- `GET /merchant/api/restaurants/restaurant/manage/` - List restaurants
+- `POST /merchant/api/restaurants/restaurant/manage/` - Create restaurant
+- `PUT /merchant/api/restaurants/restaurant/manage/{id}/` - Update restaurant
+- `DELETE /merchant/api/restaurants/restaurant/manage/{id}/` - Delete restaurant
+- `GET /merchant/api/restaurants/restaurant/menu/` - List menu categories
+- `POST /merchant/api/restaurants/restaurant/menu/` - Create menu category
+- `GET /merchant/api/restaurants/restaurant/opening-slots/` - List opening slots
+- `POST /merchant/api/restaurants/restaurant/opening-slots/` - Create opening slot
+- `GET /merchant/api/restaurants/merchant/deals/` - List deals
+- `POST /merchant/api/restaurants/merchant/deals/` - Create deal
+- `GET /merchant/api/restaurants/restaurant/reviews/` - View reviews
+- `GET /merchant/api/restaurants/restaurant/bookings/` - View bookings
 
 ---
 
@@ -107,26 +120,26 @@ Header: Authorization: Bearer <access_token>
 ## 📝 Example cURL Commands
 
 ```bash
-# Register
-curl -X POST http://127.0.0.1:8000/api/users/register/ \
+# User Register
+curl -X POST http://127.0.0.1:8000/user/api/users/register/ \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","username":"test","password":"test123","role":"customer"}'
 
-# Login
-curl -X POST http://127.0.0.1:8000/api/users/token/ \
+# User Login
+curl -X POST http://127.0.0.1:8000/user/api/users/token/ \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"test123"}'
 
 # Home Screen (with token)
-curl -X GET "http://127.0.0.1:8000/api/restaurants/home/?city=1" \
+curl -X GET "http://127.0.0.1:8000/user/api/restaurants/home/?city=1" \
   -H "Authorization: Bearer <token>"
 
 # Restaurant Detail
-curl -X GET http://127.0.0.1:8000/api/restaurants/restaurant-detail/the-golden-fork/ \
+curl -X GET http://127.0.0.1:8000/user/api/restaurants/restaurant-detail/the-golden-fork/ \
   -H "Authorization: Bearer <token>"
 
 # Claim Deal
-curl -X POST http://127.0.0.1:8000/api/restaurants/deals/1/use/ \
+curl -X POST http://127.0.0.1:8000/user/api/restaurants/deals/1/use/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"notes":"Will use on Friday"}'

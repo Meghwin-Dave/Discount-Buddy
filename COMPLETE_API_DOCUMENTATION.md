@@ -11,7 +11,8 @@
 
 ## Base URL & Authentication
 
-**Base URL**: `http://127.0.0.1:8000/api/`
+**User Base URL**: `http://127.0.0.1:8000/user/api/`  
+**Merchant Base URL**: `http://127.0.0.1:8000/merchant/api/`
 
 **Authentication**: JWT (JSON Web Token)
 - Most endpoints require authentication
@@ -25,7 +26,7 @@
 
 ### Step 1: User Registration
 
-**Endpoint**: `POST /api/users/register/`
+**Endpoint**: `POST /user/api/users/register/`
 
 **Request**:
 ```json
@@ -55,7 +56,7 @@
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/users/register/ \
+curl -X POST http://127.0.0.1:8000/user/api/users/register/ \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john.doe@example.com",
@@ -69,7 +70,7 @@ curl -X POST http://127.0.0.1:8000/api/users/register/ \
 
 ### Step 2: User Login
 
-**Endpoint**: `POST /api/users/token/`
+**Endpoint**: `POST /user/api/users/token/`
 
 **Request**:
 ```json
@@ -94,7 +95,7 @@ curl -X POST http://127.0.0.1:8000/api/users/register/ \
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/users/token/ \
+curl -X POST http://127.0.0.1:8000/user/api/users/token/ \
   -H "Content-Type: application/json" \
   -d '{
     "email": "john.doe@example.com",
@@ -106,7 +107,7 @@ curl -X POST http://127.0.0.1:8000/api/users/token/ \
 
 ### Step 3: Get User Profile
 
-**Endpoint**: `GET /api/users/me/`
+**Endpoint**: `GET /user/api/users/me/`
 
 **Headers**:
 ```
@@ -131,7 +132,7 @@ Authorization: Bearer <access_token>
 
 **cURL**:
 ```bash
-curl -X GET http://127.0.0.1:8000/api/users/me/ \
+curl -X GET http://127.0.0.1:8000/user/api/users/me/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -139,7 +140,7 @@ curl -X GET http://127.0.0.1:8000/api/users/me/ \
 
 ### Step 4: Browse Restaurants (Home Screen)
 
-**Endpoint**: `GET /api/restaurants/home/`
+**Endpoint**: `GET /user/api/restaurants/home/`
 
 **Query Parameters** (all optional):
 - `q` - Search query (restaurant name, cuisine, location)
@@ -191,7 +192,7 @@ curl -X GET http://127.0.0.1:8000/api/users/me/ \
 
 **cURL**:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/restaurants/home/?city=1&now_open=true" \
+curl -X GET "http://127.0.0.1:8000/user/api/restaurants/home/?city=1&now_open=true" \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -199,7 +200,7 @@ curl -X GET "http://127.0.0.1:8000/api/restaurants/home/?city=1&now_open=true" \
 
 ### Step 5: View Restaurant Details
 
-**Endpoint**: `GET /api/restaurants/restaurant-detail/{slug}/`
+**Endpoint**: `GET /user/api/restaurants/restaurant-detail/{slug}/`
 
 **Example**: `GET /api/restaurants/restaurant-detail/the-golden-fork/`
 
@@ -328,7 +329,7 @@ curl -X GET "http://127.0.0.1:8000/api/restaurants/home/?city=1&now_open=true" \
 
 **cURL**:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/restaurants/restaurant-detail/the-golden-fork/?latitude=51.5074&longitude=-0.1278" \
+curl -X GET "http://127.0.0.1:8000/user/api/restaurants/restaurant-detail/the-golden-fork/?latitude=51.5074&longitude=-0.1278" \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -336,7 +337,7 @@ curl -X GET "http://127.0.0.1:8000/api/restaurants/restaurant-detail/the-golden-
 
 ### Step 6: Add Restaurant to Favourites
 
-**Endpoint**: `POST /api/restaurants/restaurant-detail/{slug}/favourite/`
+**Endpoint**: `POST /user/api/restaurants/restaurant-detail/{slug}/favourite/`
 
 **Headers**:
 ```
@@ -352,13 +353,13 @@ Authorization: Bearer <access_token>
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/restaurant-detail/the-golden-fork/favourite/ \
+curl -X POST http://127.0.0.1:8000/user/api/restaurants/restaurant-detail/the-golden-fork/favourite/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
 **Remove from Favourites**:
 ```bash
-curl -X DELETE http://127.0.0.1:8000/api/restaurants/restaurant-detail/the-golden-fork/favourite/ \
+curl -X DELETE http://127.0.0.1:8000/user/api/restaurants/restaurant-detail/the-golden-fork/favourite/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -366,7 +367,7 @@ curl -X DELETE http://127.0.0.1:8000/api/restaurants/restaurant-detail/the-golde
 
 ### Step 7: Create a Booking
 
-**Endpoint**: `POST /api/restaurants/bookings/`
+**Endpoint**: `POST /user/api/restaurants/bookings/`
 
 **Headers**:
 ```
@@ -406,7 +407,7 @@ Content-Type: application/json
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/bookings/ \
+curl -X POST http://127.0.0.1:8000/user/api/restaurants/bookings/ \
   -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -423,7 +424,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/bookings/ \
 
 ### Step 8: Add a Review
 
-**Endpoint**: `POST /api/restaurants/reviews/`
+**Endpoint**: `POST /user/api/restaurants/reviews/`
 
 **Headers**:
 ```
@@ -457,7 +458,7 @@ Content-Type: application/json
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/reviews/ \
+curl -X POST http://127.0.0.1:8000/user/api/restaurants/reviews/ \
   -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -471,7 +472,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/reviews/ \
 
 ### Step 9: View Available Deals
 
-**Endpoint**: `GET /api/restaurants/deals/`
+**Endpoint**: `GET /user/api/restaurants/deals/`
 
 **Query Parameters** (optional):
 - `restaurant` - Filter by restaurant ID
@@ -506,7 +507,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/reviews/ \
 
 **cURL**:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/restaurants/deals/?restaurant=1" \
+curl -X GET "http://127.0.0.1:8000/user/api/restaurants/deals/?restaurant=1" \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -514,7 +515,7 @@ curl -X GET "http://127.0.0.1:8000/api/restaurants/deals/?restaurant=1" \
 
 ### Step 10: Claim/Redeem a Deal
 
-**Endpoint**: `POST /api/restaurants/deals/{id}/use/`
+**Endpoint**: `POST /user/api/restaurants/deals/{id}/use/`
 
 **Headers**:
 ```
@@ -558,7 +559,7 @@ Content-Type: application/json
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/deals/1/use/ \
+curl -X POST http://127.0.0.1:8000/user/api/restaurants/deals/1/use/ \
   -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -570,7 +571,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/deals/1/use/ \
 
 ### Step 11: View Claimed Deals
 
-**Endpoint**: `GET /api/restaurants/deal-uses/`
+**Endpoint**: `GET /user/api/restaurants/deal-uses/`
 
 **Headers**:
 ```
@@ -603,7 +604,7 @@ Authorization: Bearer <access_token>
 
 **cURL**:
 ```bash
-curl -X GET http://127.0.0.1:8000/api/restaurants/deal-uses/ \
+curl -X GET http://127.0.0.1:8000/user/api/restaurants/deal-uses/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -611,7 +612,7 @@ curl -X GET http://127.0.0.1:8000/api/restaurants/deal-uses/ \
 
 ### Step 12: View Profile Stats
 
-**Endpoint**: `GET /api/restaurants/profile/stats/`
+**Endpoint**: `GET /user/api/restaurants/profile/stats/`
 
 **Headers**:
 ```
@@ -633,7 +634,7 @@ Authorization: Bearer <access_token>
 
 **cURL**:
 ```bash
-curl -X GET http://127.0.0.1:8000/api/restaurants/profile/stats/ \
+curl -X GET http://127.0.0.1:8000/user/api/restaurants/profile/stats/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -641,7 +642,7 @@ curl -X GET http://127.0.0.1:8000/api/restaurants/profile/stats/ \
 
 ### Step 13: View My Bookings
 
-**Endpoint**: `GET /api/restaurants/bookings/`
+**Endpoint**: `GET /user/api/restaurants/bookings/`
 
 **Headers**:
 ```
@@ -675,7 +676,7 @@ Authorization: Bearer <access_token>
 
 **cURL**:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/restaurants/bookings/?status=pending" \
+curl -X GET "http://127.0.0.1:8000/user/api/restaurants/bookings/?status=pending" \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -683,7 +684,7 @@ curl -X GET "http://127.0.0.1:8000/api/restaurants/bookings/?status=pending" \
 
 ### Step 14: Cancel a Booking
 
-**Endpoint**: `POST /api/restaurants/bookings/{id}/cancel/`
+**Endpoint**: `POST /user/api/restaurants/bookings/{id}/cancel/`
 
 **Headers**:
 ```
@@ -699,7 +700,7 @@ Authorization: Bearer <access_token>
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/bookings/1/cancel/ \
+curl -X POST http://127.0.0.1:8000/user/api/restaurants/bookings/1/cancel/ \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -709,7 +710,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/bookings/1/cancel/ \
 
 ### Step 1: Restaurant Registration
 
-**Endpoint**: `POST /api/users/register/`
+**Endpoint**: `POST /merchant/api/users/register/`
 
 **Request**:
 ```json
@@ -739,7 +740,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/bookings/1/cancel/ \
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/users/register/ \
+curl -X POST http://127.0.0.1:8000/merchant/api/users/register/ \
   -H "Content-Type: application/json" \
   -d '{
     "email": "restaurant@example.com",
@@ -753,7 +754,7 @@ curl -X POST http://127.0.0.1:8000/api/users/register/ \
 
 ### Step 2: Restaurant Login
 
-**Endpoint**: `POST /api/users/token/`
+**Endpoint**: `POST /merchant/api/users/token/`
 
 **Request**:
 ```json
@@ -776,7 +777,7 @@ curl -X POST http://127.0.0.1:8000/api/users/register/ \
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/users/token/ \
+curl -X POST http://127.0.0.1:8000/merchant/api/users/token/ \
   -H "Content-Type: application/json" \
   -d '{
     "email": "restaurant@example.com",
@@ -788,7 +789,7 @@ curl -X POST http://127.0.0.1:8000/api/users/token/ \
 
 ### Step 3: Create Restaurant
 
-**Endpoint**: `POST /api/restaurants/restaurant/manage/`
+**Endpoint**: `POST /merchant/api/restaurants/restaurant/manage/`
 
 **Headers**:
 ```
@@ -860,7 +861,7 @@ Content-Type: application/json
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/restaurant/manage/ \
+curl -X POST http://127.0.0.1:8000/merchant/api/restaurants/restaurant/manage/ \
   -H "Authorization: Bearer <merchant_access_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -877,7 +878,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/restaurant/manage/ \
 
 ### Step 4: Add Opening Slots
 
-**Endpoint**: `POST /api/restaurants/restaurant/opening-slots/`
+**Endpoint**: `POST /merchant/api/restaurants/restaurant/opening-slots/`
 
 **Headers**:
 ```
@@ -910,7 +911,7 @@ Content-Type: application/json
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/restaurant/opening-slots/ \
+curl -X POST http://127.0.0.1:8000/merchant/api/restaurants/restaurant/opening-slots/ \
   -H "Authorization: Bearer <merchant_access_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -926,7 +927,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/restaurant/opening-slots/ \
 
 ### Step 5: Add Menu Categories
 
-**Endpoint**: `POST /api/restaurants/restaurant/menu/`
+**Endpoint**: `POST /merchant/api/restaurants/restaurant/menu/`
 
 **Headers**:
 ```
@@ -960,7 +961,7 @@ Content-Type: application/json
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/restaurant/menu/ \
+curl -X POST http://127.0.0.1:8000/merchant/api/restaurants/restaurant/menu/ \
   -H "Authorization: Bearer <merchant_access_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -984,7 +985,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/restaurant/menu/ \
 
 ### Step 7: Create a Deal/Offer
 
-**Endpoint**: `POST /api/restaurants/merchant/deals/`
+**Endpoint**: `POST /merchant/api/restaurants/merchant/deals/`
 
 **Headers**:
 ```
@@ -1051,7 +1052,7 @@ Content-Type: application/json
 
 **cURL**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/restaurants/merchant/deals/ \
+curl -X POST http://127.0.0.1:8000/merchant/api/restaurants/merchant/deals/ \
   -H "Authorization: Bearer <merchant_access_token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -1072,7 +1073,7 @@ curl -X POST http://127.0.0.1:8000/api/restaurants/merchant/deals/ \
 
 ### Step 8: View Restaurant Reviews
 
-**Endpoint**: `GET /api/restaurants/restaurant/reviews/`
+**Endpoint**: `GET /merchant/api/restaurants/restaurant/reviews/`
 
 **Headers**:
 ```
@@ -1098,7 +1099,7 @@ Authorization: Bearer <merchant_access_token>
 
 **cURL**:
 ```bash
-curl -X GET http://127.0.0.1:8000/api/restaurants/restaurant/reviews/ \
+curl -X GET http://127.0.0.1:8000/merchant/api/restaurants/restaurant/reviews/ \
   -H "Authorization: Bearer <merchant_access_token>"
 ```
 
@@ -1106,7 +1107,7 @@ curl -X GET http://127.0.0.1:8000/api/restaurants/restaurant/reviews/ \
 
 ### Step 9: View Restaurant Bookings
 
-**Endpoint**: `GET /api/restaurants/restaurant/bookings/`
+**Endpoint**: `GET /merchant/api/restaurants/restaurant/bookings/`
 
 **Headers**:
 ```
@@ -1139,7 +1140,7 @@ Authorization: Bearer <merchant_access_token>
 
 **cURL**:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/restaurants/restaurant/bookings/?status=pending" \
+curl -X GET "http://127.0.0.1:8000/merchant/api/restaurants/restaurant/bookings/?status=pending" \
   -H "Authorization: Bearer <merchant_access_token>"
 ```
 
@@ -1151,55 +1152,59 @@ curl -X GET "http://127.0.0.1:8000/api/restaurants/restaurant/bookings/?status=p
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| POST | `/api/users/register/` | Register new user/restaurant | No |
-| POST | `/api/users/token/` | Login (get JWT tokens) | No |
-| POST | `/api/users/token/refresh/` | Refresh access token | No |
-| GET | `/api/users/me/` | Get current user profile | Yes |
+| POST | `/user/api/users/register/` | Register new customer | No |
+| POST | `/user/api/users/token/` | Customer login (get JWT tokens) | No |
+| POST | `/user/api/users/token/refresh/` | Refresh access token | No |
+| GET | `/user/api/users/me/` | Get current customer profile | Yes |
+| POST | `/merchant/api/users/register/` | Register new merchant | No |
+| POST | `/merchant/api/users/token/` | Merchant login (get JWT tokens) | No |
+| POST | `/merchant/api/users/token/refresh/` | Refresh access token | No |
+| GET | `/merchant/api/users/me/` | Get current merchant profile | Yes |
 
-### Public Restaurant Endpoints
+### Public Restaurant Endpoints (User-facing)
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| GET | `/api/restaurants/home/` | Home screen data | No |
-| GET | `/api/restaurants/restaurants/` | List restaurants | No |
-| GET | `/api/restaurants/restaurant-detail/{slug}/` | Restaurant details | No |
-| GET | `/api/restaurants/deals/` | List deals | No |
-| GET | `/api/restaurants/cities/` | List cities | No |
-| GET | `/api/restaurants/countries/` | List countries | No |
-| GET | `/api/restaurants/cuisines/` | List cuisines | No |
-| GET | `/api/restaurants/categories/` | List categories | No |
-| GET | `/api/restaurants/reviews/` | List reviews | No |
+| GET | `/user/api/restaurants/home/` | Home screen data | No |
+| GET | `/user/api/restaurants/restaurants/` | List restaurants | No |
+| GET | `/user/api/restaurants/restaurant-detail/{slug}/` | Restaurant details | No |
+| GET | `/user/api/restaurants/deals/` | List deals | No |
+| GET | `/user/api/restaurants/cities/` | List cities | No |
+| GET | `/user/api/restaurants/countries/` | List countries | No |
+| GET | `/user/api/restaurants/cuisines/` | List cuisines | No |
+| GET | `/user/api/restaurants/categories/` | List categories | No |
+| GET | `/user/api/restaurants/reviews/` | List reviews | No |
 
 ### User Endpoints (Authenticated)
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| POST | `/api/restaurants/reviews/` | Add review | Yes (User) |
-| GET | `/api/restaurants/bookings/` | List user bookings | Yes (User) |
-| POST | `/api/restaurants/bookings/` | Create booking | Yes (User) |
-| POST | `/api/restaurants/bookings/{id}/cancel/` | Cancel booking | Yes (User) |
-| POST | `/api/restaurants/deals/{id}/use/` | Claim/redeem deal | Yes (User) |
-| GET | `/api/restaurants/deal-uses/` | View claimed deals | Yes (User) |
-| GET | `/api/restaurants/profile/stats/` | Profile statistics | Yes (User) |
-| POST | `/api/restaurants/restaurant-detail/{slug}/favourite/` | Add to favourites | Yes (User) |
-| DELETE | `/api/restaurants/restaurant-detail/{slug}/favourite/` | Remove from favourites | Yes (User) |
+| POST | `/user/api/restaurants/reviews/` | Add review | Yes (User) |
+| GET | `/user/api/restaurants/bookings/` | List user bookings | Yes (User) |
+| POST | `/user/api/restaurants/bookings/` | Create booking | Yes (User) |
+| POST | `/user/api/restaurants/bookings/{id}/cancel/` | Cancel booking | Yes (User) |
+| POST | `/user/api/restaurants/deals/{id}/use/` | Claim/redeem deal | Yes (User) |
+| GET | `/user/api/restaurants/deal-uses/` | View claimed deals | Yes (User) |
+| GET | `/user/api/restaurants/profile/stats/` | Profile statistics | Yes (User) |
+| POST | `/user/api/restaurants/restaurant-detail/{slug}/favourite/` | Add to favourites | Yes (User) |
+| DELETE | `/user/api/restaurants/restaurant-detail/{slug}/favourite/` | Remove from favourites | Yes (User) |
 
 ### Restaurant Management Endpoints (Merchant)
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| GET | `/api/restaurants/restaurant/manage/` | List owned restaurants | Yes (Merchant) |
-| POST | `/api/restaurants/restaurant/manage/` | Create restaurant | Yes (Merchant) |
-| PUT | `/api/restaurants/restaurant/manage/{id}/` | Update restaurant | Yes (Merchant) |
-| DELETE | `/api/restaurants/restaurant/manage/{id}/` | Delete restaurant | Yes (Merchant) |
-| GET | `/api/restaurants/restaurant/menu/` | List menu categories | Yes (Merchant) |
-| POST | `/api/restaurants/restaurant/menu/` | Create menu category | Yes (Merchant) |
-| GET | `/api/restaurants/restaurant/opening-slots/` | List opening slots | Yes (Merchant) |
-| POST | `/api/restaurants/restaurant/opening-slots/` | Create opening slot | Yes (Merchant) |
-| GET | `/api/restaurants/merchant/deals/` | List restaurant deals | Yes (Merchant) |
-| POST | `/api/restaurants/merchant/deals/` | Create deal | Yes (Merchant) |
-| GET | `/api/restaurants/restaurant/reviews/` | View restaurant reviews | Yes (Merchant) |
-| GET | `/api/restaurants/restaurant/bookings/` | View restaurant bookings | Yes (Merchant) |
+| GET | `/merchant/api/restaurants/restaurant/manage/` | List owned restaurants | Yes (Merchant) |
+| POST | `/merchant/api/restaurants/restaurant/manage/` | Create restaurant | Yes (Merchant) |
+| PUT | `/merchant/api/restaurants/restaurant/manage/{id}/` | Update restaurant | Yes (Merchant) |
+| DELETE | `/merchant/api/restaurants/restaurant/manage/{id}/` | Delete restaurant | Yes (Merchant) |
+| GET | `/merchant/api/restaurants/restaurant/menu/` | List menu categories | Yes (Merchant) |
+| POST | `/merchant/api/restaurants/restaurant/menu/` | Create menu category | Yes (Merchant) |
+| GET | `/merchant/api/restaurants/restaurant/opening-slots/` | List opening slots | Yes (Merchant) |
+| POST | `/merchant/api/restaurants/restaurant/opening-slots/` | Create opening slot | Yes (Merchant) |
+| GET | `/merchant/api/restaurants/merchant/deals/` | List restaurant deals | Yes (Merchant) |
+| POST | `/merchant/api/restaurants/merchant/deals/` | Create deal | Yes (Merchant) |
+| GET | `/merchant/api/restaurants/restaurant/reviews/` | View restaurant reviews | Yes (Merchant) |
+| GET | `/merchant/api/restaurants/restaurant/bookings/` | View restaurant bookings | Yes (Merchant) |
 
 ---
 
@@ -1262,12 +1267,12 @@ curl -X GET "http://127.0.0.1:8000/api/restaurants/restaurant/bookings/?status=p
 
 ### Quick Test Script
 
-You can use the following Python script to test all APIs:
+You can use the following Python script to test all **user-facing** APIs (customer flows):
 
 ```python
 import requests
 
-BASE_URL = "http://127.0.0.1:8000/api"
+BASE_URL = "http://127.0.0.1:8000/user/api"
 
 # 1. Register User
 response = requests.post(f"{BASE_URL}/users/register/", json={
@@ -1341,26 +1346,26 @@ print(response.json())
 ## Complete Flow Summary
 
 ### User Journey (End-to-End)
-1. ✅ **Register** → `POST /api/users/register/`
-2. ✅ **Login** → `POST /api/users/token/` → Get access token
-3. ✅ **Browse** → `GET /api/restaurants/home/`
-4. ✅ **View Details** → `GET /api/restaurants/restaurant-detail/{slug}/`
-5. ✅ **Add Favourite** → `POST /api/restaurants/restaurant-detail/{slug}/favourite/`
-6. ✅ **Create Booking** → `POST /api/restaurants/bookings/`
-7. ✅ **Add Review** → `POST /api/restaurants/reviews/`
-8. ✅ **View Deals** → `GET /api/restaurants/deals/`
-9. ✅ **Claim Deal** → `POST /api/restaurants/deals/{id}/use/`
-10. ✅ **View Profile Stats** → `GET /api/restaurants/profile/stats/`
+1. ✅ **Register** → `POST /user/api/users/register/`
+2. ✅ **Login** → `POST /user/api/users/token/` → Get access token
+3. ✅ **Browse** → `GET /user/api/restaurants/home/`
+4. ✅ **View Details** → `GET /user/api/restaurants/restaurant-detail/{slug}/`
+5. ✅ **Add Favourite** → `POST /user/api/restaurants/restaurant-detail/{slug}/favourite/`
+6. ✅ **Create Booking** → `POST /user/api/restaurants/bookings/`
+7. ✅ **Add Review** → `POST /user/api/restaurants/reviews/`
+8. ✅ **View Deals** → `GET /user/api/restaurants/deals/`
+9. ✅ **Claim Deal** → `POST /user/api/restaurants/deals/{id}/use/`
+10. ✅ **View Profile Stats** → `GET /user/api/restaurants/profile/stats/`
 
 ### Restaurant Journey (End-to-End)
-1. ✅ **Register as Merchant** → `POST /api/users/register/` (role: "merchant")
-2. ✅ **Login** → `POST /api/users/token/` → Get access token
-3. ✅ **Create Restaurant** → `POST /api/restaurants/restaurant/manage/`
-4. ✅ **Add Opening Slots** → `POST /api/restaurants/restaurant/opening-slots/`
-5. ✅ **Add Menu** → `POST /api/restaurants/restaurant/menu/`
-6. ✅ **Create Deal** → `POST /api/restaurants/merchant/deals/`
-7. ✅ **View Reviews** → `GET /api/restaurants/restaurant/reviews/`
-8. ✅ **View Bookings** → `GET /api/restaurants/restaurant/bookings/`
+1. ✅ **Register as Merchant** → `POST /merchant/api/users/register/` (role: "merchant")
+2. ✅ **Login** → `POST /merchant/api/users/token/` → Get access token
+3. ✅ **Create Restaurant** → `POST /merchant/api/restaurants/restaurant/manage/`
+4. ✅ **Add Opening Slots** → `POST /merchant/api/restaurants/restaurant/opening-slots/`
+5. ✅ **Add Menu** → `POST /merchant/api/restaurants/restaurant/menu/`
+6. ✅ **Create Deal** → `POST /merchant/api/restaurants/merchant/deals/`
+7. ✅ **View Reviews** → `GET /merchant/api/restaurants/restaurant/reviews/`
+8. ✅ **View Bookings** → `GET /merchant/api/restaurants/restaurant/bookings/`
 
 ---
 
@@ -1395,7 +1400,8 @@ print(response.json())
 
 ---
 
-**Documentation Version**: 1.0  
-**Last Updated**: 2024-01-26  
-**API Base URL**: `http://127.0.0.1:8000/api/`  
+**Documentation Version**: 1.1  
+**Last Updated**: 2026-02-02  
+**User API Base URL**: `http://127.0.0.1:8000/user/api/`  
+**Merchant API Base URL**: `http://127.0.0.1:8000/merchant/api/`  
 **Status**: ✅ All APIs Tested and Working

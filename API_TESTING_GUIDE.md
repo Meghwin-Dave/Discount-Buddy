@@ -28,9 +28,9 @@ The following dummy data has been created for testing:
 
 ## Testing APIs
 
-### 1. Get JWT Token (Authentication)
+### 1. Get JWT Token (Authentication - User)
 
-**Endpoint**: `POST /api/users/token/`
+**Endpoint**: `POST /user/api/users/token/`
 
 **Request**:
 ```json
@@ -59,7 +59,7 @@ Authorization: Bearer <access_token>
 
 ### 2. Home Screen API
 
-**Endpoint**: `GET /api/restaurants/home/`
+**Endpoint**: `GET /user/api/restaurants/home/`
 
 **Query Parameters** (all optional):
 - `q` - Search query
@@ -86,11 +86,11 @@ GET /api/restaurants/home/?city=1&now_open=true
 
 ### 3. Restaurant Detail API
 
-**Endpoint**: `GET /api/restaurants/restaurant-detail/{slug}/`
+**Endpoint**: `GET /user/api/restaurants/restaurant-detail/{slug}/`
 
 **Example**:
 ```
-GET /api/restaurants/restaurant-detail/the-golden-fork/
+GET /user/api/restaurants/restaurant-detail/the-golden-fork/
 ```
 
 **Response includes**:
@@ -106,8 +106,8 @@ GET /api/restaurants/restaurant-detail/the-golden-fork/
 - Is favourite status
 
 **Toggle Favourite**:
-- `POST /api/restaurants/restaurant-detail/{slug}/favourite/` - Add to favourites
-- `DELETE /api/restaurants/restaurant-detail/{slug}/favourite/` - Remove from favourites
+- `POST /user/api/restaurants/restaurant-detail/{slug}/favourite/` - Add to favourites
+- `DELETE /user/api/restaurants/restaurant-detail/{slug}/favourite/` - Remove from favourites
 
 **Share**:
 - `GET /api/restaurants/restaurant-detail/{slug}/share/` - Get shareable link
@@ -118,12 +118,12 @@ GET /api/restaurants/restaurant-detail/the-golden-fork/
 
 **List Reviews**:
 ```
-GET /api/restaurants/reviews/?restaurant=1&rating=5
+GET /user/api/restaurants/reviews/?restaurant=1&rating=5
 ```
 
 **Add Review** (User only):
 ```
-POST /api/restaurants/reviews/
+POST /user/api/restaurants/reviews/
 Authorization: Bearer <token>
 
 {
@@ -135,7 +135,7 @@ Authorization: Bearer <token>
 
 **Update Review**:
 ```
-PUT /api/restaurants/reviews/{id}/
+PUT /user/api/restaurants/reviews/{id}/
 Authorization: Bearer <token>
 
 {
@@ -151,13 +151,13 @@ Authorization: Bearer <token>
 
 **List Bookings** (User's bookings):
 ```
-GET /api/restaurants/bookings/
+GET /user/api/restaurants/bookings/
 Authorization: Bearer <token>
 ```
 
 **Create Booking**:
 ```
-POST /api/restaurants/bookings/
+POST /user/api/restaurants/bookings/
 Authorization: Bearer <token>
 
 {
@@ -172,7 +172,7 @@ Authorization: Bearer <token>
 
 **Cancel Booking**:
 ```
-POST /api/restaurants/bookings/{id}/cancel/
+POST /user/api/restaurants/bookings/{id}/cancel/
 Authorization: Bearer <token>
 ```
 
@@ -180,7 +180,7 @@ Authorization: Bearer <token>
 
 ### 6. Profile Stats API
 
-**Endpoint**: `GET /api/restaurants/profile/stats/`
+**Endpoint**: `GET /user/api/restaurants/profile/stats/`
 **Auth**: Bearer token required
 
 **Response**:
@@ -200,7 +200,7 @@ Authorization: Bearer <token>
 
 ### 7. Cuisines API
 
-**Endpoint**: `GET /api/restaurants/cuisines/`
+**Endpoint**: `GET /user/api/restaurants/cuisines/`
 
 **Response**: List of all active cuisines
 
@@ -210,7 +210,7 @@ Authorization: Bearer <token>
 
 **Login as Merchant**:
 ```
-POST /api/users/token/
+POST /merchant/api/users/token/
 {
   "email": "merchant@test.com",
   "password": "test123"
@@ -219,34 +219,34 @@ POST /api/users/token/
 
 **List Owned Restaurants**:
 ```
-GET /api/restaurants/restaurant/manage/
+GET /merchant/api/restaurants/restaurant/manage/
 Authorization: Bearer <merchant_token>
 ```
 
 **View Restaurant Reviews**:
 ```
-GET /api/restaurants/restaurant/reviews/
+GET /merchant/api/restaurants/restaurant/reviews/
 Authorization: Bearer <merchant_token>
 ```
 
 **View Restaurant Bookings**:
 ```
-GET /api/restaurants/restaurant/bookings/?status=confirmed
+GET /merchant/api/restaurants/restaurant/bookings/?status=confirmed
 Authorization: Bearer <merchant_token>
 ```
 
 **Manage Menu**:
 ```
-GET /api/restaurants/restaurant/menu/
-POST /api/restaurants/restaurant/menu/
-PUT /api/restaurants/restaurant/menu/{id}/
+GET /merchant/api/restaurants/restaurant/menu/
+POST /merchant/api/restaurants/restaurant/menu/
+PUT /merchant/api/restaurants/restaurant/menu/{id}/
 Authorization: Bearer <merchant_token>
 ```
 
 **Manage Opening Slots**:
 ```
-GET /api/restaurants/restaurant/opening-slots/
-POST /api/restaurants/restaurant/opening-slots/
+GET /merchant/api/restaurants/restaurant/opening-slots/
+POST /merchant/api/restaurants/restaurant/opening-slots/
 Authorization: Bearer <merchant_token>
 
 {
@@ -289,7 +289,7 @@ Authorization: Bearer <merchant_token>
 
 1. **Get Token**:
    - Method: POST
-   - URL: `http://127.0.0.1:8000/api/users/token/`
+   - URL: `http://127.0.0.1:8000/user/api/users/token/`
    - Body (JSON):
      ```json
      {
@@ -302,11 +302,11 @@ Authorization: Bearer <merchant_token>
    - Add Header: `Authorization: Bearer <access_token>`
 
 3. **Test Endpoints**:
-   - Home Screen: `GET http://127.0.0.1:8000/api/restaurants/home/`
-   - Restaurant Detail: `GET http://127.0.0.1:8000/api/restaurants/restaurant-detail/the-golden-fork/`
-   - Create Review: `POST http://127.0.0.1:8000/api/restaurants/reviews/`
-   - Create Booking: `POST http://127.0.0.1:8000/api/restaurants/bookings/`
-   - Profile Stats: `GET http://127.0.0.1:8000/api/restaurants/profile/stats/`
+   - Home Screen: `GET http://127.0.0.1:8000/user/api/restaurants/home/`
+   - Restaurant Detail: `GET http://127.0.0.1:8000/user/api/restaurants/restaurant-detail/the-golden-fork/`
+   - Create Review: `POST http://127.0.0.1:8000/user/api/restaurants/reviews/`
+   - Create Booking: `POST http://127.0.0.1:8000/user/api/restaurants/bookings/`
+   - Profile Stats: `GET http://127.0.0.1:8000/user/api/restaurants/profile/stats/`
 
 ---
 
@@ -314,9 +314,13 @@ Authorization: Bearer <merchant_token>
 
 1. **Start the server**: `python manage.py runserver`
 
-2. **Access Swagger**: http://127.0.0.1:8000/api/docs/swagger/
+2. **Access Swagger** (User): http://127.0.0.1:8000/user/api/docs/swagger/
 
-3. **Access ReDoc**: http://127.0.0.1:8000/api/docs/redoc/
+3. **Access ReDoc** (User): http://127.0.0.1:8000/user/api/docs/redoc/
+
+4. **Access Swagger** (Merchant): http://127.0.0.1:8000/merchant/api/docs/swagger/
+
+5. **Access ReDoc** (Merchant): http://127.0.0.1:8000/merchant/api/docs/redoc/
 
 4. **Authenticate**: Click "Authorize" button and enter:
    ```

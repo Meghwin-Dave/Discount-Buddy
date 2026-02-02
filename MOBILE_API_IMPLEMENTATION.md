@@ -63,7 +63,7 @@ This document summarizes the comprehensive Django REST Framework backend impleme
 
 #### Mobile App APIs:
 
-##### **Home Screen API** (`/api/restaurants/home/`)
+##### **Home Screen API** (`/user/api/restaurants/home/`)
 - **GET**: Returns comprehensive home screen data:
   - Search results (by restaurant name, cuisine, location)
   - Now Open restaurants (currently open)
@@ -72,7 +72,7 @@ This document summarizes the comprehensive Django REST Framework backend impleme
   - Top 10 restaurants in city (by rating & reviews)
   - All restaurants (card format with primary image, name, location, rating, price range)
 
-##### **Restaurant Detail API** (`/api/restaurants/restaurant-detail/{slug}/`)
+##### **Restaurant Detail API** (`/user/api/restaurants/restaurant-detail/{slug}/`)
 - **GET**: Comprehensive restaurant details:
   - Restaurant info (name, description, location, contact)
   - Location (lat/lng) for map display
@@ -88,19 +88,19 @@ This document summarizes the comprehensive Django REST Framework backend impleme
 - **DELETE /favourite/**: Remove from favourites
 - **GET /share/**: Get shareable deep-link
 
-##### **Reviews API** (`/api/restaurants/reviews/`)
+##### **Reviews API** (`/user/api/restaurants/reviews/`)
 - **GET**: List reviews (public, filterable by restaurant, rating)
 - **POST**: Add review (user only, validates rating 1-5)
 - **PUT/PATCH**: Update review (user's own reviews only)
 - **DELETE**: Delete review (user's own reviews only)
 
-##### **Bookings API** (`/api/restaurants/bookings/`)
+##### **Bookings API** (`/user/api/restaurants/bookings/`)
 - **GET**: List user's bookings (past, upcoming)
 - **POST**: Create booking (validates booking date, number of guests)
 - **GET /{id}/**: Get booking details
 - **POST /{id}/cancel/**: Cancel booking (if allowed)
 
-##### **Profile Stats API** (`/api/restaurants/profile/stats/`)
+##### **Profile Stats API** (`/user/api/restaurants/profile/stats/`)
 - **GET**: User statistics:
   - Deals claimed count
   - Money saved (sum of discount amounts)
@@ -110,36 +110,36 @@ This document summarizes the comprehensive Django REST Framework backend impleme
   - Favourite restaurants count
   - Reviews written count
 
-##### **Cuisines API** (`/api/restaurants/cuisines/`)
+##### **Cuisines API** (`/user/api/restaurants/cuisines/`)
 - **GET**: List all active cuisines
 
 #### Restaurant Management APIs (for restaurant owners):
 
-##### **Restaurant Management** (`/api/restaurants/restaurant/manage/`)
+##### **Restaurant Management** (`/merchant/api/restaurants/restaurant/manage/`)
 - **GET**: List restaurants owned by user
 - **POST**: Create restaurant
 - **GET /{id}/**: Get restaurant details
 - **PUT/PATCH /{id}/**: Update restaurant
 - **DELETE /{id}/**: Delete restaurant
 
-##### **Menu Management** (`/api/restaurants/restaurant/menu/`)
+##### **Menu Management** (`/merchant/api/restaurants/restaurant/menu/`)
 - **GET**: List menu categories for user's restaurants
 - **POST**: Create menu category
 - **GET /{id}/**: Get category with items
 - **PUT/PATCH /{id}/**: Update category
 - **DELETE /{id}/**: Delete category
 
-##### **Opening Slots Management** (`/api/restaurants/restaurant/opening-slots/`)
+##### **Opening Slots Management** (`/merchant/api/restaurants/restaurant/opening-slots/`)
 - **GET**: List opening slots for user's restaurants
 - **POST**: Create opening slot
 - **GET /{id}/**: Get slot details
 - **PUT/PATCH /{id}/**: Update slot
 - **DELETE /{id}/**: Delete slot
 
-##### **Restaurant Reviews View** (`/api/restaurants/restaurant/reviews/`)
+##### **Restaurant Reviews View** (`/merchant/api/restaurants/restaurant/reviews/`)
 - **GET**: View all reviews for user's restaurants (filterable, sortable)
 
-##### **Restaurant Bookings View** (`/api/restaurants/restaurant/bookings/`)
+##### **Restaurant Bookings View** (`/merchant/api/restaurants/restaurant/bookings/`)
 - **GET**: View all bookings for user's restaurants (filterable by status, sortable by date)
 
 ---
@@ -147,9 +147,9 @@ This document summarizes the comprehensive Django REST Framework backend impleme
 ### 5. **URLs** (`restaurants/urls.py`)
 
 All endpoints are properly registered:
-- Public endpoints: `/api/restaurants/`
-- Mobile app endpoints: `/api/restaurants/home/`, `/api/restaurants/profile/stats/`
-- Restaurant management: `/api/restaurants/restaurant/`
+- User/public endpoints: `/user/api/restaurants/`
+- Mobile app endpoints: `/user/api/restaurants/home/`, `/user/api/restaurants/profile/stats/`
+- Restaurant management (merchant): `/merchant/api/restaurants/restaurant/`
 
 ---
 
@@ -244,33 +244,33 @@ All new models are registered in Django admin with appropriate list displays, fi
 ## 🚀 API Endpoints Summary
 
 ### Public Endpoints (AllowAny)
-- `GET /api/restaurants/home/` - Home screen data
-- `GET /api/restaurants/restaurants/` - List restaurants
-- `GET /api/restaurants/restaurant-detail/{slug}/` - Restaurant detail
-- `GET /api/restaurants/reviews/` - List reviews
-- `GET /api/restaurants/cuisines/` - List cuisines
-- `GET /api/restaurants/categories/` - List categories
-- `GET /api/restaurants/cities/` - List cities
-- `GET /api/restaurants/countries/` - List countries
+- `GET /user/api/restaurants/home/` - Home screen data
+- `GET /user/api/restaurants/restaurants/` - List restaurants
+- `GET /user/api/restaurants/restaurant-detail/{slug}/` - Restaurant detail
+- `GET /user/api/restaurants/reviews/` - List reviews
+- `GET /user/api/restaurants/cuisines/` - List cuisines
+- `GET /user/api/restaurants/categories/` - List categories
+- `GET /user/api/restaurants/cities/` - List cities
+- `GET /user/api/restaurants/countries/` - List countries
 
 ### User Endpoints (IsUser)
-- `POST /api/restaurants/reviews/` - Add review
-- `GET /api/restaurants/bookings/` - List bookings
-- `POST /api/restaurants/bookings/` - Create booking
-- `POST /api/restaurants/bookings/{id}/cancel/` - Cancel booking
-- `GET /api/restaurants/profile/stats/` - Profile stats
-- `POST /api/restaurants/restaurant-detail/{slug}/favourite/` - Mark favourite
-- `DELETE /api/restaurants/restaurant-detail/{slug}/favourite/` - Remove favourite
+- `POST /user/api/restaurants/reviews/` - Add review
+- `GET /user/api/restaurants/bookings/` - List bookings
+- `POST /user/api/restaurants/bookings/` - Create booking
+- `POST /user/api/restaurants/bookings/{id}/cancel/` - Cancel booking
+- `GET /user/api/restaurants/profile/stats/` - Profile stats
+- `POST /user/api/restaurants/restaurant-detail/{slug}/favourite/` - Mark favourite
+- `DELETE /user/api/restaurants/restaurant-detail/{slug}/favourite/` - Remove favourite
 
 ### Restaurant Endpoints (IsRestaurant)
-- `GET /api/restaurants/restaurant/manage/` - List restaurants
-- `POST /api/restaurants/restaurant/manage/` - Create restaurant
-- `GET /api/restaurants/restaurant/menu/` - List menu categories
-- `POST /api/restaurants/restaurant/menu/` - Create menu category
-- `GET /api/restaurants/restaurant/opening-slots/` - List opening slots
-- `POST /api/restaurants/restaurant/opening-slots/` - Create opening slot
-- `GET /api/restaurants/restaurant/reviews/` - View reviews
-- `GET /api/restaurants/restaurant/bookings/` - View bookings
+- `GET /merchant/api/restaurants/restaurant/manage/` - List restaurants
+- `POST /merchant/api/restaurants/restaurant/manage/` - Create restaurant
+- `GET /merchant/api/restaurants/restaurant/menu/` - List menu categories
+- `POST /merchant/api/restaurants/restaurant/menu/` - Create menu category
+- `GET /merchant/api/restaurants/restaurant/opening-slots/` - List opening slots
+- `POST /merchant/api/restaurants/restaurant/opening-slots/` - Create opening slot
+- `GET /merchant/api/restaurants/restaurant/reviews/` - View reviews
+- `GET /merchant/api/restaurants/restaurant/bookings/` - View bookings
 
 ---
 
@@ -290,8 +290,8 @@ All new models are registered in Django admin with appropriate list displays, fi
    ```
 
 3. **Test APIs:**
-   - Use Django REST Framework browsable API at `/api/restaurants/`
-   - Use Swagger docs at `/api/docs/swagger/`
+   - Use Django REST Framework browsable API at `/user/api/restaurants/`
+   - Use Swagger docs at `/user/api/docs/swagger/` (and `/merchant/api/docs/swagger/` for merchant endpoints)
    - Test with mobile app or Postman
 
 4. **Set Up Restaurant Owners:**

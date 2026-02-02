@@ -1,10 +1,15 @@
-from django.urls import path
+"""
+Deprecated: use `vouchers.user_urls` and `vouchers.merchant_urls`.
 
-from .views import VoucherListView, MerchantVoucherView
+This module keeps a single entrypoint that still enforces `/user/` and `/merchant/`
+classification at the path level (regardless of where it's included).
+"""
+
+from django.urls import path, include
 
 urlpatterns = [
-    path("", VoucherListView.as_view(), name="voucher-list"),
-    path("me", MerchantVoucherView.as_view(), name="merchant-vouchers"),
+    path("user/", include("vouchers.user_urls")),
+    path("merchant/", include("vouchers.merchant_urls")),
 ]
 
 
