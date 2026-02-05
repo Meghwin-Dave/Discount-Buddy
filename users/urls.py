@@ -2,6 +2,8 @@ from django.urls import path
 
 from .views import (
     RegisterView,
+    RegisterInitView,
+    RegisterCompleteView,
     MeView,
     LoginView,
     RefreshTokenView,
@@ -9,6 +11,11 @@ from .views import (
 )
 
 urlpatterns = [
+    # New two-stage registration flow
+    path("register/init", RegisterInitView.as_view(), name="register-init"),
+    path("register/complete", RegisterCompleteView.as_view(), name="register-complete"),
+
+    # Legacy single-step registration (still available)
     path("register", RegisterView.as_view(), name="register"),
     path("login", LoginView.as_view(), name="login"),
     path("me", MeView.as_view(), name="me"),

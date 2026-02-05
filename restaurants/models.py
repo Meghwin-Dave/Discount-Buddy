@@ -294,22 +294,60 @@ class SavedDeal(TimeStampedModel):
 
 
 class DealUse(TimeStampedModel):
-    """Track when a deal is used by a user"""
+    """
+    Track when a deal is claimed/used by a user.
+
+    This model also acts as the redemption record for a single user/deal pair,
+    holding the 6‑digit redemption code and QR code used at the restaurant.
+    """
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="deal_uses")
     deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="deal_uses")
     used_at = models.DateTimeField(default=timezone.now)
     restaurant_confirmed = models.BooleanField(
         default=False,
-        help_text="Whether restaurant has confirmed the use"
+        help_text="Whether restaurant has confirmed the use",
     )
     notes = models.TextField(blank=True)
-    
+
+    # Redemption-related fields
+    redemption_code = models.CharField(
+        max_length=6,
+        unique=True,
+        db_index=True,
+        null=True,
+        blank=True,
+        help_text="Unique 6-digit numeric code used for in-restaurant redemption",
+    )
+    qr_code = models.ImageField(
+        upload_to="deal_redemptions/%Y/%m/%d/",
+        null=True,
+        blank=True,
+        help_text="QR code image encoding the redemption reference",
+    )
+    is_redeemed = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this redemption has been completed in the restaurant",
+    )
+    redeemed_at = models.DateTimeField(null=True, blank=True)
+    redeemed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="redeemed_deal_uses",
+        help_text="Restaurant staff user who performed the redemption",
+    )
+
     class Meta:
         indexes = [
             models.Index(fields=["user", "deal"]),
             models.Index(fields=["used_at"]),
+            models.Index(fields=["redemption_code"]),
+            models.Index(fields=["is_redeemed", "redeemed_at"]),
         ]
-        
+
     def __str__(self):
         return f"{self.user.email} used {self.deal.title} at {self.used_at}"
 

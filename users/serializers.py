@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import UserProfile
+from .models import UserProfile, RegistrationOTP
 
 User = get_user_model()
 
@@ -91,4 +91,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         
         return user
 
+
+class RegisterInitSerializer(serializers.Serializer):
+    """Stage 1 of registration: collect email and desired role, send 4-digit OTP."""
+
+    email = serializers.EmailField()
+    role = serializers.ChoiceField(choices=UserProfile.ROLE_CHOICES, default=UserProfile.ROLE_CUSTOMER)
+
+    def validate_email(self, value):
+        User = get_user_model()
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+
+
+class RegisterCompleteSerializer(serializers.Serializer):
+    """
+    Stage 2 of registration: verify OTP and set password.
+
+    Username will be derived from the email's local part.
+    """
+
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=4)
+    password = serializers.CharField(write_only=True, min_length=6)
 

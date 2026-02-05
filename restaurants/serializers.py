@@ -285,13 +285,38 @@ class SavedDealSerializer(serializers.ModelSerializer):
 
 class DealUseSerializer(serializers.ModelSerializer):
     deal = DealListSerializer(read_only=True)
-    
+    qr_code_url = serializers.SerializerMethodField()
+
     class Meta:
         model = DealUse
         fields = (
-            "id", "deal", "used_at", "restaurant_confirmed",
-            "notes", "created_at"
+            "id",
+            "deal",
+            "used_at",
+            "restaurant_confirmed",
+            "notes",
+            "redemption_code",
+            "qr_code",
+            "qr_code_url",
+            "is_redeemed",
+            "redeemed_at",
+            "created_at",
         )
+        read_only_fields = (
+            "redemption_code",
+            "qr_code",
+            "qr_code_url",
+            "is_redeemed",
+            "redeemed_at",
+        )
+
+    def get_qr_code_url(self, obj):
+        if not obj.qr_code:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.qr_code.url)
+        return obj.qr_code.url
 
 
 class DealUseCreateSerializer(serializers.ModelSerializer):
@@ -311,21 +336,17 @@ class DealUseCreateSerializer(serializers.ModelSerializer):
         return value
     
     def create(self, validated_data):
+        """
+        Delegate creation to the service layer so that redemption code and QR
+        generation (and used_count increment) are handled in one place.
+        """
+        from .services import create_deal_use_with_redemption
+
         user = self.context["request"].user
         deal = validated_data["deal"]
-        
-        # Create the use record
-        deal_use = DealUse.objects.create(
-            user=user,
-            deal=deal,
-            notes=validated_data.get("notes", "")
-        )
-        
-        # Increment used count
-        deal.used_count += 1
-        deal.save(update_fields=["used_count"])
-        
-        return deal_use
+        notes = validated_data.get("notes", "")
+
+        return create_deal_use_with_redemption(user=user, deal=deal, notes=notes)
 
 
 # New serializers for mobile app features
@@ -572,4 +593,23 @@ class RestaurantProfileSerializer(serializers.ModelSerializer):
         model = RestaurantProfile
         fields = ("id", "user", "user_email", "restaurant", "is_primary_owner", "created_at")
         read_only_fields = ("user", "restaurant")
+
+
+class DealRedemptionRequestSerializer(serializers.Serializer):
+    """
+    Request payload for redeeming a deal at the restaurant.
+
+    Either redemption_code (6-digit code) or qr_data (raw QR payload string)
+    must be provided.
+    """
+
+    redemption_code = serializers.CharField(max_length=6, required=False)
+    qr_data = serializers.CharField(required=False)
+
+    def validate(self, attrs):
+        redemption_code = attrs.get("redemption_code")
+        qr_data = attrs.get("qr_data")
+        if not redemption_code and not qr_data:
+            raise serializers.ValidationError("Either redemption_code or qr_data is required.")
+        return attrs
 

@@ -3,6 +3,7 @@ from django.db.models import Q, Count, F
 from django.utils import timezone
 from django.core.cache import cache
 from rest_framework import generics, viewsets, status, filters
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -15,14 +16,30 @@ from .models import (
     Booking, MenuCategory, MenuItem, OpeningSlot, RestaurantProfile
 )
 from .serializers import (
-    CountrySerializer, CitySerializer, RestaurantCategorySerializer,
-    RestaurantSerializer, RestaurantListSerializer, DealSerializer,
-    DealListSerializer, SavedRestaurantSerializer, SavedDealSerializer,
-    DealUseSerializer, DealUseCreateSerializer, CuisineSerializer,
-    ReviewSerializer, ReviewCreateSerializer, BookingSerializer,
-    BookingCreateSerializer, MenuCategorySerializer, MenuItemSerializer,
-    OpeningSlotSerializer, RestaurantDetailSerializer, RestaurantProfileSerializer
+    CountrySerializer,
+    CitySerializer,
+    RestaurantCategorySerializer,
+    RestaurantSerializer,
+    RestaurantListSerializer,
+    DealSerializer,
+    DealListSerializer,
+    SavedRestaurantSerializer,
+    SavedDealSerializer,
+    DealUseSerializer,
+    DealUseCreateSerializer,
+    DealRedemptionRequestSerializer,
+    CuisineSerializer,
+    ReviewSerializer,
+    ReviewCreateSerializer,
+    BookingSerializer,
+    BookingCreateSerializer,
+    MenuCategorySerializer,
+    MenuItemSerializer,
+    OpeningSlotSerializer,
+    RestaurantDetailSerializer,
+    RestaurantProfileSerializer,
 )
+from .services import redeem_deal
 from users.permissions import IsMerchant, IsUser, IsRestaurant, IsRestaurantOwner
 
 
@@ -337,7 +354,12 @@ class DealViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def use(self, request, pk=None):
-        """Mark a deal as used by the current user"""
+        """
+        Claim a deal for the current user.
+
+        This creates a DealUse record, assigns a 6-digit redemption code and
+        generates a QR code image that can later be redeemed in the restaurant.
+        """
         deal = self.get_object()
         
         if not deal.is_active_now():
@@ -351,7 +373,7 @@ class DealViewSet(viewsets.ReadOnlyModelViewSet):
                 {"error": "You have reached the maximum uses for this deal"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         serializer = DealUseCreateSerializer(
             data={"deal": deal.id, "notes": request.data.get("notes", "")},
             context={"request": request}
@@ -359,10 +381,8 @@ class DealViewSet(viewsets.ReadOnlyModelViewSet):
         
         if serializer.is_valid():
             deal_use = serializer.save()
-            return Response(
-                DealUseSerializer(deal_use, context={"request": request}).data,
-                status=status.HTTP_201_CREATED
-            )
+            response_serializer = DealUseSerializer(deal_use, context={"request": request})
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1028,3 +1048,38 @@ class RestaurantBookingsManagementView(generics.ListAPIView):
         return Booking.objects.filter(
             restaurant_id__in=restaurant_ids
         ).select_related("user", "restaurant")
+
+
+class DealRedemptionView(APIView):
+    """
+    API used by restaurant/merchant apps to redeem a claimed deal.
+
+    Accepts either:
+    - redemption_code: 6-digit numeric code entered manually, OR
+    - qr_data: raw string payload scanned from the QR code
+    """
+
+    permission_classes = [IsRestaurant]
+
+    def post(self, request, *args, **kwargs):
+        serializer = DealRedemptionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        result = redeem_deal(
+            actor=request.user,
+            redemption_code=serializer.validated_data.get("redemption_code"),
+            qr_data=serializer.validated_data.get("qr_data"),
+        )
+
+        if not result.success:
+            # Use 409 when already redeemed to better signal a conflict, otherwise 400.
+            status_code = status.HTTP_409_CONFLICT if result.deal_use and result.deal_use.is_redeemed else status.HTTP_400_BAD_REQUEST
+            return Response(
+                {"success": False, "reason": result.reason},
+                status=status_code,
+            )
+
+        deal_use = result.deal_use
+        payload = DealUseSerializer(deal_use, context={"request": request}).data
+        payload.update({"success": True, "reason": result.reason})
+        return Response(payload, status=status.HTTP_200_OK)
