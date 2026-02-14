@@ -24,12 +24,16 @@ urlpatterns = [
     path("user/api/vouchers/", include("vouchers.user_urls")),
     path("user/api/wallet/", include("wallet.urls")),
     path("user/api/restaurants/", include("restaurants.user_urls")),
+    path("user/api/notifications/", include("notifications.urls")),
+    path("user/api/notifications", include("notifications.urls")),
 
     # ===================== Merchant-facing APIs =====================
     path("merchant/api/core/", include("core.urls")),
     path("merchant/api/users/", include("users.urls")),
     path("merchant/api/vouchers/", include("vouchers.merchant_urls")),
     path("merchant/api/restaurants/", include("restaurants.merchant_urls")),
+    path("merchant/api/notifications/", include("notifications.urls")),
+    path("merchant/api/notifications", include("notifications.urls")),
     # path("api/orders/", include("orders.urls")),
     # path("api/marketplace/", include("marketplace.urls")),
     path(
