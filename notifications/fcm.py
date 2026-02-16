@@ -14,6 +14,9 @@ Setup Instructions:
 import logging
 from typing import Dict, Any, Optional
 
+import logging
+from typing import Dict, Any, Optional
+
 logger = logging.getLogger(__name__)
 
 # Firebase Admin SDK will be initialized lazily
@@ -59,6 +62,7 @@ def initialize_firebase():
         
         _firebase_app = firebase_admin.initialize_app(cred)
         logger.info("Firebase Admin SDK initialized successfully")
+        print("✅ [FCM] Firebase Admin SDK initialized successfully with credentials")
         return _firebase_app
         
     except ImportError:
@@ -66,9 +70,11 @@ def initialize_firebase():
             "firebase-admin package not installed. "
             "Install it with: pip install firebase-admin"
         )
+        print("❌ [FCM] firebase-admin package NOT installed")
         return None
     except Exception as e:
         logger.error(f"Failed to initialize Firebase: {str(e)}")
+        print(f"❌ [FCM] Failed to initialize Firebase: {str(e)}")
         return None
 
 
@@ -96,6 +102,7 @@ def send_fcm_message(
         # Initialize Firebase if not already done
         if initialize_firebase() is None:
             logger.warning("Firebase not initialized, skipping push notification")
+            print("⚠️ [FCM] Firebase not initialized, skipping push notification")
             return False
         
         from firebase_admin import messaging
@@ -119,12 +126,15 @@ def send_fcm_message(
         )
         
         # Send message
+        print(f"🚀 [FCM] Attempting to send message to token prefix: {token[:10]}...")
         response = messaging.send(message)
         logger.info(f"Successfully sent FCM message: {response}")
+        print(f"✅ [FCM] Successfully sent FCM message. Response ID: {response}")
         return True
         
     except Exception as e:
         logger.error(f"Failed to send FCM message: {str(e)}")
+        print(f"❌ [FCM] Failed to send FCM message: {str(e)}")
         return False
 
 

@@ -53,6 +53,33 @@ class NotificationAdmin(admin.ModelAdmin):
         }),
     )
 
+    def save_model(self, request, obj, form, change):
+        """
+        Override save_model to trigger push notification when created via Admin.
+        """
+        super().save_model(request, obj, form, change)
+        
+        # Only send push notification for new objects (not updates)
+        if not change:
+            try:
+                from .tasks import send_push_notification
+                # Use delay() if Celery is running, otherwise call directly if configured differently
+                # But here we stick to the pattern in services.py
+                send_push_notification.delay(str(obj.id))
+                print(f"✅ [Admin] Triggered push notification for {obj.id}")
+            except ImportError:
+                print("⚠️ [Admin] Could not import tasks, skipping push")
+            except AttributeError as e:
+                print(f"⚠️ [Admin] Task does not support .delay() (Celery missing?): {e}")
+                # Fallback: try calling directly if .delay fails
+                try:
+                    send_push_notification(str(obj.id))
+                    print(f"✅ [Admin] Validated synchronous fallback for {obj.id}")
+                except Exception as inner_e:
+                     print(f"❌ [Admin] Synchronous fallback failed: {inner_e}")
+            except Exception as e:
+                print(f"❌ [Admin] Failed to trigger push: {e}")
+
 
 @admin.register(DeviceToken)
 class DeviceTokenAdmin(admin.ModelAdmin):

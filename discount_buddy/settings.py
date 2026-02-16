@@ -14,7 +14,7 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
 # ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOmake documentatSTS", "*").split(",")
-ALLOWED_HOSTS = ["10.237.194.186","10.215.158.186","127.0.0.1", "localhost", "ec2-16-171-196-144.eu-north-1.compute.amazonaws.com"]
+ALLOWED_HOSTS = ["192.168.29.221","10.215.158.186","127.0.0.1", "localhost", "ec2-16-171-196-144.eu-north-1.compute.amazonaws.com"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -299,6 +299,11 @@ FIREBASE_CREDENTIALS_PATH = BASE_DIR / "firebase-credentials.json"
 # Celery broker URL (Redis recommended)
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+
+# If no Redis is available, force eager mode (run synchronously)
+# This prevents crashes when Redis is missing
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
 
 # Celery settings
 CELERY_ACCEPT_CONTENT = ["json"]

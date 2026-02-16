@@ -21,9 +21,19 @@ try:
     from celery import shared_task
 except ImportError:
     # Celery not installed, create a dummy decorator
+    # Celery not installed, create a dummy decorator
     def shared_task(func):
         """Dummy decorator when Celery is not available"""
-        return func
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        
+        # Add .delay() method to run synchronously
+        def delay(*args, **kwargs):
+            print(f"⚠️ [Task] Celery not installed, running {func.__name__} synchronously")
+            return func(*args, **kwargs)
+            
+        wrapper.delay = delay
+        return wrapper
 
 
 @shared_task
@@ -50,18 +60,24 @@ def send_push_notification(notification_id: str):
         
         for device_token in device_tokens:
             try:
-                send_fcm_message(
+                sent = send_fcm_message(
                     token=device_token.token,
                     title=notification.title,
                     body=notification.message,
                     data=notification.payload or {}
                 )
-                success_count += 1
+                if sent:
+                    success_count += 1
+                    print(f"✅ [Task] Push sent to {device_token.user.email} ({device_token.device_type})")
+                else:
+                    error_count += 1
+                    print(f"❌ [Task] Push FAILED for {device_token.user.email} (send_fcm_message returned False)")
             except Exception as e:
                 error_count += 1
                 logger.error(
                     f"Failed to send push to token {device_token.token[:20]}...: {str(e)}"
                 )
+                print(f"❌ [Task] Push failed for {device_token.user.email}: {e}")
         
         logger.info(
             f"Push notification sent for notification {notification_id}: "
