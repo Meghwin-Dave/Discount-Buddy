@@ -7,7 +7,8 @@ import requests
 import json
 from datetime import datetime, timedelta
 
-BASE_URL = "http://127.0.0.1:8000/api"
+USER_BASE_URL = "http://127.0.0.1:8000/user/api"
+MERCHANT_BASE_URL = "http://127.0.0.1:8000/merchant/api"
 results = []
 
 def test_api(name, method, url, headers=None, data=None, expected_status=200):
@@ -61,7 +62,7 @@ user_data = {
 register_response = test_api(
     "Register User",
     "POST",
-    f"{BASE_URL}/users/register/",
+    f"{USER_BASE_URL}/users/register",
     data=user_data,
     expected_status=201
 )
@@ -76,7 +77,7 @@ if register_response and register_response.status_code == 201:
     login_response = test_api(
         "Login User",
         "POST",
-        f"{BASE_URL}/users/token/",
+        f"{USER_BASE_URL}/users/token",
         data={"email": user_email, "password": user_password},
         expected_status=200
     )
@@ -88,18 +89,18 @@ if register_response and register_response.status_code == 201:
         
         # Test 3: Get User Profile
         print("\n3. GET USER PROFILE")
-        test_api("Get User Profile", "GET", f"{BASE_URL}/users/me/", headers=headers)
+        test_api("Get User Profile", "GET", f"{USER_BASE_URL}/users/me", headers=headers)
         
         # Test 4: Home Screen
         print("\n4. HOME SCREEN API")
-        test_api("Home Screen", "GET", f"{BASE_URL}/restaurants/home/", headers=headers)
+        test_api("Home Screen", "GET", f"{USER_BASE_URL}/restaurants/home", headers=headers)
         
         # Test 5: List Restaurants
         print("\n5. LIST RESTAURANTS")
         restaurants_response = test_api(
             "List Restaurants",
             "GET",
-            f"{BASE_URL}/restaurants/restaurants/",
+            f"{USER_BASE_URL}/restaurants/restaurants",
             headers=headers
         )
         
@@ -117,7 +118,7 @@ if register_response and register_response.status_code == 201:
             test_api(
                 "Restaurant Detail",
                 "GET",
-                f"{BASE_URL}/restaurants/restaurant-detail/{restaurant_slug}/",
+                f"{USER_BASE_URL}/restaurants/restaurant-detail/{restaurant_slug}",
                 headers=headers
             )
         
@@ -127,7 +128,7 @@ if register_response and register_response.status_code == 201:
             test_api(
                 "Add to Favourites",
                 "POST",
-                f"{BASE_URL}/restaurants/restaurant-detail/{restaurant_slug}/favourite/",
+                f"{USER_BASE_URL}/restaurants/restaurant-detail/{restaurant_slug}/favourite",
                 headers=headers,
                 expected_status=201
             )
@@ -137,7 +138,7 @@ if register_response and register_response.status_code == 201:
         deals_response = test_api(
             "List Deals",
             "GET",
-            f"{BASE_URL}/restaurants/deals/",
+            f"{USER_BASE_URL}/restaurants/deals",
             headers=headers
         )
         
@@ -153,7 +154,7 @@ if register_response and register_response.status_code == 201:
             test_api(
                 "Claim Deal",
                 "POST",
-                f"{BASE_URL}/restaurants/deals/{deal_id}/use/",
+                f"{USER_BASE_URL}/restaurants/deals/{deal_id}/use",
                 headers=headers,
                 data={"notes": "Test claim"},
                 expected_status=201
@@ -164,7 +165,7 @@ if register_response and register_response.status_code == 201:
         test_api(
             "View Claimed Deals",
             "GET",
-            f"{BASE_URL}/restaurants/deal-uses/",
+            f"{USER_BASE_URL}/restaurants/deal-uses",
             headers=headers
         )
         
@@ -175,7 +176,7 @@ if register_response and register_response.status_code == 201:
             booking_response = test_api(
                 "Create Booking",
                 "POST",
-                f"{BASE_URL}/restaurants/bookings/",
+                f"{USER_BASE_URL}/restaurants/bookings",
                 headers=headers,
                 data={
                     "restaurant": restaurant_id,
@@ -196,7 +197,7 @@ if register_response and register_response.status_code == 201:
         test_api(
             "List Bookings",
             "GET",
-            f"{BASE_URL}/restaurants/bookings/",
+            f"{USER_BASE_URL}/restaurants/bookings",
             headers=headers
         )
         
@@ -206,7 +207,7 @@ if register_response and register_response.status_code == 201:
             test_api(
                 "Add Review",
                 "POST",
-                f"{BASE_URL}/restaurants/reviews/",
+                f"{USER_BASE_URL}/restaurants/reviews",
                 headers=headers,
                 data={
                     "restaurant": restaurant_id,
@@ -221,16 +222,16 @@ if register_response and register_response.status_code == 201:
         test_api(
             "Profile Stats",
             "GET",
-            f"{BASE_URL}/restaurants/profile/stats/",
+            f"{USER_BASE_URL}/restaurants/profile/stats",
             headers=headers
         )
         
         # Test 15: Public Endpoints (No Auth)
         print("\n15. PUBLIC ENDPOINTS (NO AUTH)")
-        test_api("List Cities", "GET", f"{BASE_URL}/restaurants/cities/")
-        test_api("List Countries", "GET", f"{BASE_URL}/restaurants/countries/")
-        test_api("List Cuisines", "GET", f"{BASE_URL}/restaurants/cuisines/")
-        test_api("List Categories", "GET", f"{BASE_URL}/restaurants/categories/")
+        test_api("List Cities", "GET", f"{USER_BASE_URL}/restaurants/cities")
+        test_api("List Countries", "GET", f"{USER_BASE_URL}/restaurants/countries")
+        test_api("List Cuisines", "GET", f"{USER_BASE_URL}/restaurants/cuisines")
+        test_api("List Categories", "GET", f"{USER_BASE_URL}/restaurants/categories")
         
         # Test 16: Restaurant Management (if merchant)
         print("\n16. RESTAURANT MANAGEMENT (Merchant)")
@@ -244,7 +245,7 @@ if register_response and register_response.status_code == 201:
         merchant_register = test_api(
             "Register Merchant",
             "POST",
-            f"{BASE_URL}/users/register/",
+            f"{USER_BASE_URL}/users/register",
             data=merchant_data,
             expected_status=201
         )
@@ -253,7 +254,7 @@ if register_response and register_response.status_code == 201:
             merchant_login = test_api(
                 "Merchant Login",
                 "POST",
-                f"{BASE_URL}/users/token/",
+                f"{USER_BASE_URL}/users/token",
                 data={"email": merchant_data["email"], "password": merchant_data["password"]},
                 expected_status=200
             )
@@ -265,22 +266,22 @@ if register_response and register_response.status_code == 201:
                 test_api(
                     "List Owned Restaurants",
                     "GET",
-                    f"{BASE_URL}/restaurants/restaurant/manage/",
-                    headers=merchant_headers
+                    f"{MERCHANT_BASE_URL}/restaurants/restaurant/manage",
+                    headers=merchant_headers,
                 )
-                
+
                 test_api(
                     "View Restaurant Reviews",
                     "GET",
-                    f"{BASE_URL}/restaurants/restaurant/reviews/",
-                    headers=merchant_headers
+                    f"{MERCHANT_BASE_URL}/restaurants/restaurant/reviews",
+                    headers=merchant_headers,
                 )
-                
+
                 test_api(
                     "View Restaurant Bookings",
                     "GET",
-                    f"{BASE_URL}/restaurants/restaurant/bookings/",
-                    headers=merchant_headers
+                    f"{MERCHANT_BASE_URL}/restaurants/restaurant/bookings",
+                    headers=merchant_headers,
                 )
 
 # Summary

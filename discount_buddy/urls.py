@@ -18,22 +18,44 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/core/", include("core.urls")),
-    path("api/users/", include("users.urls")),
-    path("api/vouchers/", include("vouchers.urls")),
-    path("api/wallet/", include("wallet.urls")),
-    path("api/restaurants/", include("restaurants.urls")),
+    # ===================== User-facing APIs =====================
+    path("user/api/core/", include("core.urls")),
+    path("user/api/users/", include("users.urls")),
+    path("user/api/vouchers/", include("vouchers.user_urls")),
+    path("user/api/wallet/", include("wallet.urls")),
+    path("user/api/restaurants/", include("restaurants.user_urls")),
+    path("user/api/notifications/", include("notifications.urls")),
+    path("user/api/notifications", include("notifications.urls")),
+    path("api/restaurants/", include("restaurants.user_urls")),
+
+    # ===================== Merchant-facing APIs =====================
+    path("merchant/api/core/", include("core.urls")),
+    path("merchant/api/users/", include("users.urls")),
+    path("merchant/api/vouchers/", include("vouchers.merchant_urls")),
+    path("merchant/api/restaurants/", include("restaurants.merchant_urls")),
+    path("merchant/api/notifications/", include("notifications.urls")),
+    path("merchant/api/notifications", include("notifications.urls")),
     # path("api/orders/", include("orders.urls")),
     # path("api/marketplace/", include("marketplace.urls")),
     path(
-        "api/docs/swagger/",
+        "user/api/docs/swagger/",
         schema_view.with_ui("swagger", cache_timeout=0),
-        name="schema-swagger-ui",
+        name="schema-swagger-ui-user",
     ),
     path(
-        "api/docs/redoc/",
+        "user/api/docs/redoc/",
         schema_view.with_ui("redoc", cache_timeout=0),
-        name="schema-redoc",
+        name="schema-redoc-user",
+    ),
+    path(
+        "merchant/api/docs/swagger/",
+        schema_view.with_ui("swagger", cache_timeout=0),
+        name="schema-swagger-ui-merchant",
+    ),
+    path(
+        "merchant/api/docs/redoc/",
+        schema_view.with_ui("redoc", cache_timeout=0),
+        name="schema-redoc-merchant",
     ),
 ]
 

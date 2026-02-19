@@ -1,5 +1,8 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
+
+from core.models import TimeStampedModel
 
 
 class User(AbstractUser):
@@ -33,4 +36,30 @@ class UserProfile(models.Model):
     def __str__(self) -> str:
         return f"{self.user.email} ({self.role})"
 
+
+class RegistrationOTP(TimeStampedModel):
+    """
+    Temporary record used for two-stage email OTP registration.
+
+    Stores a 4-digit code sent to the user's email along with the desired role.
+    """
+
+    email = models.EmailField(db_index=True)
+    role = models.CharField(max_length=20, choices=UserProfile.ROLE_CHOICES, default=UserProfile.ROLE_CUSTOMER)
+    otp_code = models.CharField(max_length=4)
+    is_verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["email", "is_verified", "expires_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"OTP for {self.email} ({'verified' if self.is_verified else 'pending'})"
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() > self.expires_at
 

@@ -14,7 +14,7 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
 # ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOmake documentatSTS", "*").split(",")
-ALLOWED_HOSTS = ["16.171.196.144","10.215.158.186","127.0.0.1", "localhost", "ec2-16-171-196-144.eu-north-1.compute.amazonaws.com"]
+ALLOWED_HOSTS = ["192.168.29.221","16.171.196.144","127.0.0.1", "localhost", "ec2-16-171-196-144.eu-north-1.compute.amazonaws.com"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "vouchers",
     "wallet",
     "restaurants",
+    "notifications",
     # "orders",
     # "marketplace",
 ]
@@ -61,6 +62,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "discount_buddy.urls"
 
+# Automatically append trailing slashes to URLs
 APPEND_SLASH = False
 
 TEMPLATES = [
@@ -138,6 +140,18 @@ AUTH_USER_MODEL = "users.User"
 # Google OAuth – set in .env (never commit real values)
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+
+# Email configuration (for OTP and notifications)
+# Use Gmail App Password: https://myaccount.google.com/apppasswords
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "priyanshuchavda999@gmail.com")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "evxd tzoy ulbf rdap")  # Gmail App Password
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL", "Discount Buddy <priyanshuchavda999@gmail.com>"
+)
 
 # django-allauth
 AUTHENTICATION_BACKENDS = [
@@ -268,4 +282,43 @@ SWAGGER_SETTINGS = {
     "USE_SESSION_AUTH": False,
 }
 
+# ============================================================================
+# NOTIFICATIONS & PUSH NOTIFICATIONS
+# ============================================================================
+
+# Firebase Cloud Messaging (FCM) for push notifications
+# Firebase service account credentials
+FIREBASE_CREDENTIALS_PATH = BASE_DIR / "firebase-credentials.json"
+
+# ============================================================================
+# CELERY CONFIGURATION (for async push notifications)
+# ============================================================================
+# Celery is REQUIRED for production to handle push notifications asynchronously
+# For development without Celery, push notifications will be skipped gracefully
+
+# Celery broker URL (Redis recommended)
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+
+# If no Redis is available, force eager mode (run synchronously)
+# This prevents crashes when Redis is missing
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
+
+# Celery settings
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+
+# Celery task retry settings
+CELERY_TASK_AUTORETRY_FOR = (Exception,)
+CELERY_TASK_RETRY_KWARGS = {"max_retries": 3, "countdown": 5}
+
+# Note: To run Celery worker in development:
+# celery -A discount_buddy worker --loglevel=info
+# To run Celery beat (for scheduled tasks):
+# celery -A discount_buddy beat --loglevel=info
 
