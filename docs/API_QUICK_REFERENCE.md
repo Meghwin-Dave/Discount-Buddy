@@ -53,6 +53,7 @@ Header: Authorization: Bearer <access_token>
 | 3. Create Restaurant | POST | `/merchant/api/restaurants/restaurant/manage/` | Yes |
 | 4. Add Opening Slots | POST | `/merchant/api/restaurants/restaurant/opening-slots/` | Yes |
 | 5. Add Menu Category | POST | `/merchant/api/restaurants/restaurant/menu/` | Yes |
+| 5a. Add Menu Item | POST | `/merchant/api/restaurants/restaurant/menu-items/` | Yes |
 | 6. Create Deal | POST | `/merchant/api/restaurants/merchant/deals/` | Yes |
 | 7. View Reviews | GET | `/merchant/api/restaurants/restaurant/reviews/` | Yes |
 | 8. View Bookings | GET | `/merchant/api/restaurants/restaurant/bookings/` | Yes |
@@ -100,6 +101,8 @@ Header: Authorization: Bearer <access_token>
 - `DELETE /merchant/api/restaurants/restaurant/manage/{id}/` - Delete restaurant
 - `GET /merchant/api/restaurants/restaurant/menu/` - List menu categories
 - `POST /merchant/api/restaurants/restaurant/menu/` - Create menu category
+- `GET /merchant/api/restaurants/restaurant/menu-items/` - List menu items
+- `POST /merchant/api/restaurants/restaurant/menu-items/` - Create menu item
 - `GET /merchant/api/restaurants/restaurant/opening-slots/` - List opening slots
 - `POST /merchant/api/restaurants/restaurant/opening-slots/` - Create opening slot
 - `GET /merchant/api/restaurants/merchant/deals/` - List deals

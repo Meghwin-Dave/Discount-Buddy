@@ -33,8 +33,10 @@ from .serializers import (
     ReviewCreateSerializer,
     BookingSerializer,
     BookingCreateSerializer,
+    BookingManagementSerializer,
     MenuCategorySerializer,
     MenuItemSerializer,
+    MenuItemCreateSerializer,
     OpeningSlotSerializer,
     RestaurantDetailSerializer,
     RestaurantProfileSerializer,
@@ -923,6 +925,26 @@ class RestaurantManagementViewSet(viewsets.ModelViewSet):
             return [IsRestaurant()]
         return [IsRestaurant()]
 
+    def perform_create(self, serializer):
+        user = self.request.user
+        
+        # Check if user is a merchant
+        merchant = None
+        try:
+            if hasattr(user, 'profile') and user.profile.role == 'merchant':
+                from vouchers.models import Merchant
+                merchant, _ = Merchant.objects.get_or_create(
+                    user=user,
+                    defaults={'name': user.username or user.email}
+                )
+        except Exception:
+            pass
+            
+        if merchant:
+            serializer.save(merchant=merchant)
+        else:
+            serializer.save()
+
 
 class MenuManagementViewSet(viewsets.ModelViewSet):
     """ViewSet for restaurant owners to manage menu categories and items"""
@@ -1022,14 +1044,19 @@ class RestaurantReviewsManagementView(generics.ListAPIView):
         return Review.objects.filter(restaurant_id__in=restaurant_ids).select_related("user")
 
 
-class RestaurantBookingsManagementView(generics.ListAPIView):
-    """View for restaurant owners to view their restaurant bookings"""
-    serializer_class = BookingSerializer
+class RestaurantBookingsManagementViewSet(viewsets.ModelViewSet):
+    """ViewSet for restaurant owners to view and update their restaurant bookings"""
     permission_classes = [IsRestaurant]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    
+    def get_serializer_class(self):
+        if self.action in ["update", "partial_update"]:
+            return BookingManagementSerializer
+        return BookingSerializer
     filterset_fields = ["status"]
     ordering_fields = ["booking_date"]
     ordering = ["-booking_date"]
+    http_method_names = ["get", "patch", "head", "options"]
     
     def get_queryset(self):
         # Get bookings for user's restaurants
@@ -1083,3 +1110,59 @@ class DealRedemptionView(APIView):
         payload = DealUseSerializer(deal_use, context={"request": request}).data
         payload.update({"success": True, "reason": result.reason})
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class MenuItemManagementViewSet(viewsets.ModelViewSet):
+    """ViewSet for restaurant owners to manage menu items"""
+    serializer_class = MenuItemSerializer
+    permission_classes = [IsRestaurant]
+    
+    def get_serializer_class(self):
+        if self.action in ["create", "update", "partial_update"]:
+            return MenuItemCreateSerializer
+        return MenuItemSerializer
+    
+    def get_queryset(self):
+        # Get menu items for user's restaurants
+        user = self.request.user
+        restaurant_ids = []
+        try:
+            if hasattr(user, 'restaurant_profile'):
+                restaurant_ids = [user.restaurant_profile.restaurant_id]
+            elif hasattr(user, 'merchant'):
+                restaurant_ids = list(
+                    Restaurant.objects.filter(merchant=user.merchant).values_list("id", flat=True)
+                )
+        except:
+            pass
+        
+        return MenuItem.objects.filter(category__restaurant_id__in=restaurant_ids)
+    
+    def perform_create(self, serializer):
+        # Ensure category belongs to a restaurant owned by user
+        category_id = self.request.data.get("category")
+        if category_id:
+            try:
+                category = MenuCategory.objects.get(id=category_id)
+                restaurant = category.restaurant
+                
+                # Check ownership
+                user = self.request.user
+                is_owner = False
+                
+                if hasattr(user, 'restaurant_profile') and user.restaurant_profile.restaurant == restaurant:
+                    is_owner = True
+                elif hasattr(user, 'merchant'):
+                    # Check if restaurant belongs to merchant
+                    if restaurant.merchant == user.merchant:
+                        is_owner = True
+                    
+                if not is_owner:
+                    from rest_framework.exceptions import PermissionDenied
+                    raise PermissionDenied("You don't own the restaurant this category belongs to")
+                    
+                serializer.save(category=category)
+            except MenuCategory.DoesNotExist:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError("Menu category not found")
+

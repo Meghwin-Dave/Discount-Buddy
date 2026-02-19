@@ -7,9 +7,10 @@ from .views import (
     # Restaurant management views
     RestaurantManagementViewSet,
     MenuManagementViewSet,
+    MenuItemManagementViewSet,
     OpeningSlotManagementViewSet,
     RestaurantReviewsManagementView,
-    RestaurantBookingsManagementView,
+    RestaurantBookingsManagementViewSet,
     DealRedemptionView,
 )
 
@@ -20,6 +21,8 @@ router.register(r"restaurants", MerchantRestaurantViewSet, basename="merchant-re
 router.register(r"deals", MerchantDealViewSet, basename="merchant-deal")
 router.register(r"restaurant/manage", RestaurantManagementViewSet, basename="restaurant-manage")
 router.register(r"restaurant/menu", MenuManagementViewSet, basename="menu-manage")
+router.register(r"restaurant/menu-items", MenuItemManagementViewSet, basename="menu-item-manage")
+router.register(r"restaurant/bookings", RestaurantBookingsManagementViewSet, basename="restaurant-bookings")
 router.register(
     r"restaurant/opening-slots", OpeningSlotManagementViewSet, basename="opening-slot-manage"
 )
@@ -27,7 +30,6 @@ router.register(
 urlpatterns = [
     # Restaurant management endpoints
     path("restaurant/reviews", RestaurantReviewsManagementView.as_view(), name="restaurant-reviews"),
-    path("restaurant/bookings", RestaurantBookingsManagementView.as_view(), name="restaurant-bookings"),
     path("deals/redeem", DealRedemptionView.as_view(), name="deal-redeem"),
     # Router URLs
     path("", include(router.urls)),

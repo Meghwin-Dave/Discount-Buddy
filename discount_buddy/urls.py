@@ -26,6 +26,7 @@ urlpatterns = [
     path("user/api/restaurants/", include("restaurants.user_urls")),
     path("user/api/notifications/", include("notifications.urls")),
     path("user/api/notifications", include("notifications.urls")),
+    path("api/restaurants/", include("restaurants.user_urls")),
 
     # ===================== Merchant-facing APIs =====================
     path("merchant/api/core/", include("core.urls")),

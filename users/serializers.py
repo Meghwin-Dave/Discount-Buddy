@@ -35,6 +35,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             token['role'] = user.profile.role
         except UserProfile.DoesNotExist:
             token['role'] = None
+
+        if user.is_merchant:
+            token['role'] = UserProfile.ROLE_MERCHANT
         
         # Add is_merchant and is_customer flags to token payload
         token['is_merchant'] = user.is_merchant
@@ -53,6 +56,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             data['role'] = self.user.profile.role
         except UserProfile.DoesNotExist:
             data['role'] = None
+
+        if self.user.is_merchant:
+            data['role'] = UserProfile.ROLE_MERCHANT
         
         # Add current date
         data['current_date'] = timezone.now().isoformat()

@@ -973,13 +973,60 @@ curl -X POST http://127.0.0.1:8000/merchant/api/restaurants/restaurant/menu/ \
   }'
 ```
 
----
-
 ### Step 6: Add Menu Items
 
-**Note**: Menu items are added through the menu category detail endpoint or via admin. For API, you would need to extend the serializer to accept items.
+**Endpoint**: `POST /merchant/api/restaurants/restaurant/menu-items/`
 
-**Alternative**: Use Django admin or extend the API to support nested menu items creation.
+**Headers**:
+```
+Authorization: Bearer <merchant_access_token>
+Content-Type: application/json
+```
+
+**Request**:
+```json
+{
+  "category": 1,
+  "name": "Classic Burger",
+  "description": "Juicy beef burger with lettuce and tomato",
+  "price": "12.50",
+  "is_vegetarian": false,
+  "is_vegan": false,
+  "is_gluten_free": false,
+  "is_available": true,
+  "order": 0
+}
+```
+
+**Response** (201 Created):
+```json
+{
+  "id": 1,
+  "category": 1,
+  "name": "Classic Burger",
+  "description": "Juicy beef burger with lettuce and tomato",
+  "price": "12.50",
+  "is_vegetarian": false,
+  "is_vegan": false,
+  "is_gluten_free": false,
+  "is_available": true,
+  "image_url": null,
+  "order": 0
+}
+```
+
+**cURL**:
+```bash
+curl -X POST http://127.0.0.1:8000/merchant/api/restaurants/restaurant/menu-items/ \
+  -H "Authorization: Bearer <merchant_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "category": 1,
+    "name": "Classic Burger",
+    "description": "Beef burger",
+    "price": "12.50"
+  }'
+```
 
 ---
 

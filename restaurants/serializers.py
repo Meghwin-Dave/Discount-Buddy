@@ -472,6 +472,14 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         return Booking.objects.create(user=user, **validated_data)
 
 
+class BookingManagementSerializer(BookingSerializer):
+    """Serializer for merchants to manage bookings (allows status update)"""
+    
+    class Meta(BookingSerializer.Meta):
+        read_only_fields = ("user",)  # Remove 'status' from read_only so it can be updated
+
+
+
 class MenuItemSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     
@@ -480,7 +488,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "description", "price", "is_vegetarian",
             "is_vegan", "is_gluten_free", "is_available", "image",
-            "image_url", "order"
+            "image_url", "order", "category"
         )
         
     def get_image_url(self, obj):
@@ -490,6 +498,27 @@ class MenuItemSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.image.url)
             return obj.image.url
         return None
+
+
+class MenuItemCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating menu items"""
+    
+    class Meta:
+        model = MenuItem
+        fields = (
+            "id", "category", "name", "description", "price", "is_vegetarian",
+            "is_vegan", "is_gluten_free", "is_available", "image", "order"
+        )
+    
+    def validate_category(self, value):
+        # Validate that the category belongs to a restaurant owned by the user
+        request = self.context.get("request")
+        if request and request.user:
+            user = request.user
+            # Check ownership logic (similar to views)
+            # This might be complex to put in serializer, can be done in view permission/perform_create
+            pass
+        return value
 
 
 class MenuCategorySerializer(serializers.ModelSerializer):
