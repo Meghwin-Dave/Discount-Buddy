@@ -117,7 +117,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "city_id", "city", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
-            "price_range", "verified", "is_featured", "opening_hours",
+            "price_range", "occupancy", "verified", "is_featured", "opening_hours",
             "images", "active_deals_count", "is_saved", "created_at"
         )
         read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "images")
@@ -189,7 +189,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
         model = Restaurant
         fields = (
             "id", "name", "slug", "city_name", "country_name",
-            "latitude", "longitude", "price_range", "verified",
+            "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "active_deals_count",
             "leaderboard_score", "distance_miles"
         )
@@ -597,7 +597,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "city", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website",
-            "categories", "cuisines", "price_range", "verified", "is_featured",
+            "categories", "cuisines", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
             "is_favourite", "distance", "created_at"

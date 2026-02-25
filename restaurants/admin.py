@@ -59,6 +59,7 @@ class RestaurantAdmin(admin.ModelAdmin):
         "verified",
         "is_featured",
         "price_range",
+        "occupancy",
         "required_visit_gap",
         "last_mystery_visit_date",
         "next_mystery_visit_date",
@@ -86,6 +87,7 @@ class RestaurantAdmin(admin.ModelAdmin):
                 "fields": (
                     "categories",
                     "price_range",
+                    "occupancy",
                     "opening_hours",
                     "required_visit_gap",
                 )

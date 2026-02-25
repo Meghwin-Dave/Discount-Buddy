@@ -89,6 +89,22 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
         validators=[MinValueValidator(1), MaxValueValidator(4)],
         help_text="Price range from 1 (budget) to 4 (expensive)"
     )
+    OCCUPANCY_AVAILABLE = "available"
+    OCCUPANCY_MODERATELY_BUSY = "moderately_busy"
+    OCCUPANCY_VERY_BUSY = "very_busy"
+
+    OCCUPANCY_CHOICES = [
+        (OCCUPANCY_AVAILABLE, "Available"),
+        (OCCUPANCY_MODERATELY_BUSY, "Moderately Busy"),
+        (OCCUPANCY_VERY_BUSY, "Very Busy"),
+    ]
+
+    occupancy = models.CharField(
+        max_length=32,
+        choices=OCCUPANCY_CHOICES,
+        default=OCCUPANCY_AVAILABLE,
+        help_text="Current occupancy status as shown to users.",
+    )
     
     # Status
     verified = models.BooleanField(default=False, db_index=True)
