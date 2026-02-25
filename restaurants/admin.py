@@ -1,8 +1,25 @@
 from django.contrib import admin
 from .models import (
-    Country, City, RestaurantCategory, Restaurant, Deal,
-    RestaurantImage, DealImage, SavedRestaurant, SavedDeal, DealUse,
-    Cuisine, Review, Booking, MenuCategory, MenuItem, OpeningSlot, RestaurantProfile
+    Country,
+    City,
+    RestaurantCategory,
+    Restaurant,
+    Deal,
+    RestaurantImage,
+    DealImage,
+    SavedRestaurant,
+    SavedDeal,
+    DealUse,
+    Cuisine,
+    Review,
+    Booking,
+    MenuCategory,
+    MenuItem,
+    OpeningSlot,
+    RestaurantProfile,
+    MysteryVisit,
+    MysteryScore,
+    MysteryEvidence,
 )
 from wallet.models import Wallet, WalletTransaction
 
@@ -37,8 +54,15 @@ class RestaurantImageInline(admin.TabularInline):
 @admin.register(Restaurant)
 class RestaurantAdmin(admin.ModelAdmin):
     list_display = (
-        "name", "city", "verified", "is_featured",
-        "price_range", "created_at"
+        "name",
+        "city",
+        "verified",
+        "is_featured",
+        "price_range",
+        "required_visit_gap",
+        "last_mystery_visit_date",
+        "next_mystery_visit_date",
+        "created_at",
     )
     list_filter = ("verified", "is_featured", "city__country", "city", "created_at")
     search_fields = ("name", "address", "city__name", "description")
@@ -56,13 +80,43 @@ class RestaurantAdmin(admin.ModelAdmin):
         ("Contact", {
             "fields": ("phone", "email", "website")
         }),
-        ("Details", {
-            "fields": ("categories", "price_range", "opening_hours")
-        }),
+        (
+            "Details",
+            {
+                "fields": (
+                    "categories",
+                    "price_range",
+                    "opening_hours",
+                    "required_visit_gap",
+                )
+            },
+        ),
         ("Status", {
             "fields": ("verified", "is_featured", "is_active")
         }),
     )
+
+    def last_mystery_visit_date(self, obj):
+        visit = (
+            MysteryVisit.objects.filter(restaurant=obj, status=MysteryVisit.STATUS_SUBMITTED)
+            .order_by("-scheduled_for")
+            .first()
+        )
+        return visit.scheduled_for if visit else None
+
+    last_mystery_visit_date.short_description = "Last Mystery Visit"
+
+    def next_mystery_visit_date(self, obj):
+        visit = (
+            MysteryVisit.objects.filter(
+                restaurant=obj, status__in=[MysteryVisit.STATUS_ASSIGNED, MysteryVisit.STATUS_IN_PROGRESS]
+            )
+            .order_by("scheduled_for")
+            .first()
+        )
+        return visit.scheduled_for if visit else None
+
+    next_mystery_visit_date.short_description = "Next Mystery Visit"
 
 
 class DealImageInline(admin.TabularInline):
@@ -207,3 +261,35 @@ class RestaurantProfileAdmin(admin.ModelAdmin):
     list_filter = ("is_primary_owner", "created_at")
     search_fields = ("user__email", "restaurant__name")
     raw_id_fields = ("user", "restaurant")
+
+
+@admin.register(MysteryVisit)
+class MysteryVisitAdmin(admin.ModelAdmin):
+    list_display = (
+        "restaurant",
+        "mystery_guest",
+        "scheduled_for",
+        "status",
+        "overall_score",
+        "is_risk_flagged",
+        "created_at",
+    )
+    list_filter = ("status", "is_risk_flagged", "scheduled_for", "created_at")
+    search_fields = ("restaurant__name", "mystery_guest__email")
+    raw_id_fields = ("restaurant", "mystery_guest")
+    date_hierarchy = "scheduled_for"
+
+
+@admin.register(MysteryScore)
+class MysteryScoreAdmin(admin.ModelAdmin):
+    list_display = ("visit", "section", "score", "created_at")
+    list_filter = ("section", "created_at")
+    search_fields = ("visit__restaurant__name", "visit__mystery_guest__email")
+    raw_id_fields = ("visit",)
+
+
+@admin.register(MysteryEvidence)
+class MysteryEvidenceAdmin(admin.ModelAdmin):
+    list_display = ("visit", "description", "created_at")
+    search_fields = ("visit__restaurant__name", "visit__mystery_guest__email", "description")
+    raw_id_fields = ("visit",)

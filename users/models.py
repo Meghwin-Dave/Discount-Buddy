@@ -21,11 +21,13 @@ class UserProfile(models.Model):
     ROLE_ADMIN = "admin"
     ROLE_MERCHANT = "merchant"
     ROLE_CUSTOMER = "customer"
+    ROLE_MYSTERY_GUEST = "mystery_guest"
 
     ROLE_CHOICES = [
         (ROLE_ADMIN, "Admin"),
         (ROLE_MERCHANT, "Merchant"),
         (ROLE_CUSTOMER, "Customer"),
+        (ROLE_MYSTERY_GUEST, "Mystery Guest"),
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
