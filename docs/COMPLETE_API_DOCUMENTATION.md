@@ -1214,6 +1214,7 @@ curl -X GET "http://127.0.0.1:8000/merchant/api/restaurants/restaurant/bookings/
 |--------|----------|-------------|---------------|
 | GET | `/user/api/restaurants/home/` | Home screen data | No |
 | GET | `/user/api/restaurants/restaurants/` | List restaurants | No |
+| GET | `/user/api/restaurants/restaurants/nearby?latitude={lat}&longitude={lon}&radius={miles}` | Nearby restaurants sorted by distance (miles) | No |
 | GET | `/user/api/restaurants/restaurant-detail/{slug}/` | Restaurant details | No |
 | GET | `/user/api/restaurants/deals/` | List deals | No |
 | GET | `/user/api/restaurants/cities/` | List cities | No |
@@ -1447,8 +1448,200 @@ print(response.json())
 
 ---
 
-**Documentation Version**: 1.1  
-**Last Updated**: 2026-02-02  
+## Mystery Guest & Leaderboard Extensions
+
+### New Role: Mystery Guest
+
+- **Role Key**: `mystery_guest` (stored in `UserProfile.role`)
+- **Purpose**: Authorized evaluators who:
+  - Receive assigned restaurants for anonymous quality audits
+  - Submit standardized mystery visit reports
+  - Upload evidence (photos/receipts)
+  - Cannot edit restaurant data or change reports after submission
+
+### Leaderboard Score
+
+**Formula**:
+
+\[
+\text{Leaderboard Score} = (\text{User Rating} \times 40\%) + (\text{Mystery Score} \times 60\%)
+\]
+
+- **User Rating**:
+  - Average review rating (0–5), normalised to 0–100.
+- **Mystery Score**:
+  - Latest `MysteryVisit.overall_score` (0–100).
+  - Freshness decay: older visits contribute less using an exponential decay with ~90‑day time constant.
+- **Exposed Field**:
+  - `leaderboard_score` (float, 0–100) on restaurant cards.
+- **Visible In**:
+  - `GET /user/api/restaurants/home/`
+  - `GET /user/api/restaurants/restaurants/`
+
+Example restaurant card snippet:
+
+```json
+{
+  "id": 1,
+  "name": "The Golden Fork",
+  "slug": "the-golden-fork",
+  "city_name": "London",
+  "country_name": "United Kingdom",
+  "leaderboard_score": 87.5,
+  "...": "..."
+}
+```
+
+### Mystery Guest APIs
+
+All endpoints below require:
+
+- **Auth**: `Authorization: Bearer <access_token>`
+- **Role**: `mystery_guest`
+
+#### 1. List Assigned / Historical Visits
+
+- **Method**: `GET`
+- **Endpoint**: `/user/api/restaurants/mystery-visits`
+- **Query Params (optional)**:
+  - `status` – `assigned`, `in_progress`, `submitted`, `cancelled`
+  - `restaurant` – restaurant ID
+
+**Response 200 OK** (paginated):
+
+```json
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 10,
+      "restaurant": 6,
+      "restaurant_name": "My New Restaurant",
+      "restaurant_city": "London",
+      "mystery_guest": 42,
+      "scheduled_for": "2024-04-10T19:00:00Z",
+      "started_at": null,
+      "submitted_at": null,
+      "status": "assigned",
+      "overall_score": null,
+      "is_risk_flagged": false,
+      "comments": "",
+      "scores": [],
+      "evidence": [],
+      "created_at": "2024-04-01T10:00:00Z"
+    }
+  ]
+}
+```
+
+#### 2. Get Visit Detail
+
+- **Method**: `GET`
+- **Endpoint**: `/user/api/restaurants/mystery-visits/{id}/`
+
+Returns full visit details including section scores and evidence.
+
+#### 3. Start a Visit
+
+- **Method**: `POST`
+- **Endpoint**: `/user/api/restaurants/mystery-visits/{id}/start/`
+- **Body**: _empty_
+
+**Response 200 OK**:
+
+```json
+{
+  "id": 10,
+  "status": "in_progress",
+  "started_at": "2024-04-10T18:55:00Z",
+  "...": "..."
+}
+```
+
+#### 4. Submit Mystery Visit Report
+
+- **Method**: `POST`
+- **Endpoint**: `/user/api/restaurants/mystery-visits/{id}/submit/`
+- **Headers**: `Content-Type: application/json`
+
+**Request Body**:
+
+```json
+{
+  "pre_visit_score": 8,
+  "pre_visit_comment": "App & deal were clear.",
+  "ambience_score": 9,
+  "ambience_comment": "Nice decor and lighting.",
+  "service_score": 8,
+  "service_comment": "Friendly, slightly slow.",
+  "food_score": 9,
+  "food_comment": "Great taste and presentation.",
+  "discount_experience_score": 10,
+  "discount_experience_comment": "Staff applied QR smoothly.",
+  "hygiene_score": 9,
+  "hygiene_comment": "Tables and washrooms very clean.",
+  "is_risk_flagged": false,
+  "comments": "Strong overall experience."
+}
+```
+
+All `*_score` fields are required integers (`0–10`); comments and `is_risk_flagged` are optional.
+
+**Response 200 OK**:
+
+```json
+{
+  "id": 10,
+  "restaurant": 6,
+  "status": "submitted",
+  "overall_score": 88.0,
+  "is_risk_flagged": false,
+  "comments": "Strong overall experience.",
+  "scores": [
+    {
+      "section": "pre_visit",
+      "section_display": "Pre-Visit",
+      "score": 8,
+      "comment": "App & deal were clear."
+    }
+    // ... other sections
+  ],
+  "submitted_at": "2024-04-10T20:30:00Z",
+  "created_at": "2024-04-01T10:00:00Z"
+}
+```
+
+Once submitted, the visit is immutable via the API.
+
+#### 5. Upload Evidence
+
+- **Method**: `POST`
+- **Endpoint**: `/user/api/restaurants/mystery-visits/{id}/evidence/`
+- **Headers**: `Content-Type: multipart/form-data`
+
+**Form Fields**:
+
+- `file` – required (image/PDF/etc.)
+- `description` – optional text
+
+**Response 201 Created**:
+
+```json
+{
+  "id": 5,
+  "file": "mystery_evidence/2024/04/10/receipt.jpg",
+  "file_url": "http://127.0.0.1:8000/media/mystery_evidence/2024/04/10/receipt.jpg",
+  "description": "Final bill with discount applied",
+  "created_at": "2024-04-10T20:20:00Z"
+}
+```
+
+---
+
+**Documentation Version**: 1.2  
+**Last Updated**: 2026-02-25  
 **User API Base URL**: `http://127.0.0.1:8000/user/api/`  
 **Merchant API Base URL**: `http://127.0.0.1:8000/merchant/api/`  
 **Status**: ✅ All APIs Tested and Working

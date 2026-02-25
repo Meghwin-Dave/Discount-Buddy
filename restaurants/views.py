@@ -11,9 +11,24 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from .filters import RestaurantFilter, DealFilter
 from .models import (
-    Country, City, RestaurantCategory, Restaurant, Deal,
-    SavedRestaurant, SavedDeal, DealUse, Cuisine, Review,
-    Booking, MenuCategory, MenuItem, OpeningSlot, RestaurantProfile
+    Country,
+    City,
+    RestaurantCategory,
+    Restaurant,
+    Deal,
+    SavedRestaurant,
+    SavedDeal,
+    DealUse,
+    Cuisine,
+    Review,
+    Booking,
+    MenuCategory,
+    MenuItem,
+    OpeningSlot,
+    RestaurantProfile,
+    MysteryVisit,
+    MysteryScore,
+    MysteryEvidence,
 )
 from .serializers import (
     CountrySerializer,
@@ -40,9 +55,18 @@ from .serializers import (
     OpeningSlotSerializer,
     RestaurantDetailSerializer,
     RestaurantProfileSerializer,
+    MysteryVisitSerializer,
+    MysteryVisitSubmitSerializer,
+    MysteryEvidenceSerializer,
 )
 from .services import redeem_deal
-from users.permissions import IsMerchant, IsUser, IsRestaurant, IsRestaurantOwner
+from users.permissions import (
+    IsMerchant,
+    IsUser,
+    IsRestaurant,
+    IsRestaurantOwner,
+    IsMysteryGuest,
+)
 
 
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -209,10 +233,17 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=False, methods=["get"], permission_classes=[AllowAny])
     def nearby(self, request):
-        """Get nearby restaurants based on coordinates"""
+        """
+        Get nearby restaurants based on user coordinates, sorted by distance in miles.
+
+        Query params:
+        - latitude (required)
+        - longitude (required)
+        - radius (optional, miles; default 10)
+        """
         lat = request.query_params.get("latitude")
         lon = request.query_params.get("longitude")
-        radius = float(request.query_params.get("radius", 10))
+        radius_miles = float(request.query_params.get("radius", 10))
         
         if not lat or not lon:
             return Response(
@@ -229,9 +260,12 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Get all restaurants within bounding box
-        lat_delta = radius / 111.0
-        lon_delta = radius / (111.0 * abs(math.cos(math.radians(lat))))
+        # Convert radius from miles to km for calculations
+        radius_km = radius_miles * 1.60934
+
+        # Get all restaurants within bounding box (km)
+        lat_delta = radius_km / 111.0
+        lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
         
         restaurants = Restaurant.objects.filter(
             is_active=True,
@@ -248,17 +282,22 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         restaurants_with_distance = []
         for restaurant in restaurants:
             if restaurant.latitude and restaurant.longitude:
-                distance = calculate_distance(
+                distance_km = calculate_distance(
                     lat, lon,
                     float(restaurant.latitude),
                     float(restaurant.longitude)
                 )
-                if distance and distance <= radius:
-                    restaurants_with_distance.append((restaurant, distance))
+                if distance_km:
+                    distance_miles = distance_km * 0.621371
+                    if distance_miles <= radius_miles:
+                        restaurants_with_distance.append((restaurant, distance_miles))
         
         # Sort by distance
         restaurants_with_distance.sort(key=lambda x: x[1])
-        restaurants = [r[0] for r in restaurants_with_distance]
+        restaurants = []
+        for r, distance_miles in restaurants_with_distance:
+            r._distance_miles = distance_miles
+            restaurants.append(r)
         
         serializer = RestaurantListSerializer(restaurants, many=True, context={"request": request})
         return Response(serializer.data)
@@ -635,11 +674,14 @@ class HomeScreenView(generics.GenericAPIView):
             
             now_open_restaurants = queryset.filter(id__in=open_restaurant_ids)
         
-        # Top 10 in City (by rating and reviews count)
-        top_10 = queryset.order_by(
-            "-average_rating",
-            "-reviews_count",
-            "-is_featured"
+        # Top 10 in City (by leaderboard score: user rating + mystery score with decay)
+        restaurants_for_top = list(queryset)
+        for r in restaurants_for_top:
+            r._leaderboard_score = r.get_leaderboard_score()
+        top_10 = sorted(
+            restaurants_for_top,
+            key=lambda r: getattr(r, "_leaderboard_score", 0.0),
+            reverse=True,
         )[:10]
         
         # Cuisine-based segregation
@@ -662,7 +704,7 @@ class HomeScreenView(generics.GenericAPIView):
                 ).data
             })
         
-        # All restaurants (card format)
+        # All restaurants (card format) – keep default ordering but include leaderboard_score in payload
         all_restaurants = queryset.order_by("-is_featured", "-average_rating")[:50]
         
         return Response({
@@ -1165,4 +1207,153 @@ class MenuItemManagementViewSet(viewsets.ModelViewSet):
             except MenuCategory.DoesNotExist:
                 from rest_framework.exceptions import ValidationError
                 raise ValidationError("Menu category not found")
+
+
+class MysteryVisitViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    APIs for Mystery Guests:
+    - list assigned visits
+    - see visit details, scores, evidence
+    - start a visit
+    - submit evaluation
+    - upload evidence
+    - view visit history
+    """
+
+    serializer_class = MysteryVisitSerializer
+    permission_classes = [IsMysteryGuest]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["status", "restaurant"]
+    ordering_fields = ["scheduled_for", "created_at"]
+    ordering = ["-scheduled_for"]
+
+    def get_queryset(self):
+        return (
+            MysteryVisit.objects.filter(mystery_guest=self.request.user)
+            .select_related("restaurant", "restaurant__city")
+            .prefetch_related("scores", "evidence")
+        )
+
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        """Mark a visit as started."""
+        visit = self.get_object()
+        if visit.mystery_guest != request.user:
+            return Response(
+                {"error": "You are not assigned to this visit."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if visit.status not in [MysteryVisit.STATUS_ASSIGNED]:
+            return Response(
+                {"error": "Visit is already in progress or submitted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        visit.status = MysteryVisit.STATUS_IN_PROGRESS
+        visit.started_at = timezone.now()
+        visit.save(update_fields=["status", "started_at", "updated_at"])
+        return Response(MysteryVisitSerializer(visit, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        """
+        Submit the full questionnaire and calculate the weighted score.
+        """
+        visit = self.get_object()
+        if visit.mystery_guest != request.user:
+            return Response(
+                {"error": "You are not assigned to this visit."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if visit.status == MysteryVisit.STATUS_SUBMITTED:
+            return Response(
+                {"error": "This visit has already been submitted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = MysteryVisitSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # Upsert scores for each section
+        section_mapping = {
+            MysteryScore.SECTION_PRE_VISIT: ("pre_visit_score", "pre_visit_comment"),
+            MysteryScore.SECTION_AMBIENCE: ("ambience_score", "ambience_comment"),
+            MysteryScore.SECTION_SERVICE: ("service_score", "service_comment"),
+            MysteryScore.SECTION_FOOD: ("food_score", "food_comment"),
+            MysteryScore.SECTION_DISCOUNT_EXPERIENCE: (
+                "discount_experience_score",
+                "discount_experience_comment",
+            ),
+            MysteryScore.SECTION_HYGIENE: ("hygiene_score", "hygiene_comment"),
+        }
+
+        scores = {}
+        for section, (score_key, comment_key) in section_mapping.items():
+            score_value = data[score_key]
+            comment_value = data.get(comment_key, "")
+            obj, _ = MysteryScore.objects.update_or_create(
+                visit=visit,
+                section=section,
+                defaults={"score": score_value, "comment": comment_value},
+            )
+            scores[section] = obj.score
+
+        # Weighted average on a 0–100 scale
+        weights = {
+            MysteryScore.SECTION_PRE_VISIT: 0.10,
+            MysteryScore.SECTION_AMBIENCE: 0.15,
+            MysteryScore.SECTION_SERVICE: 0.25,
+            MysteryScore.SECTION_FOOD: 0.25,
+            MysteryScore.SECTION_DISCOUNT_EXPERIENCE: 0.15,
+            MysteryScore.SECTION_HYGIENE: 0.10,
+        }
+        total = 0.0
+        for section, weight in weights.items():
+            total += scores[section] * weight
+        overall_score = round(total * 10, 2)  # convert 0–10 to 0–100
+
+        visit.overall_score = overall_score
+        visit.is_risk_flagged = data.get("is_risk_flagged", False)
+        visit.comments = data.get("comments", "")
+        visit.status = MysteryVisit.STATUS_SUBMITTED
+        if not visit.started_at:
+            visit.started_at = timezone.now()
+        visit.submitted_at = timezone.now()
+        visit.save(
+            update_fields=[
+                "overall_score",
+                "is_risk_flagged",
+                "comments",
+                "status",
+                "started_at",
+                "submitted_at",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            MysteryVisitSerializer(visit, context={"request": request}).data
+        )
+
+    @action(detail=True, methods=["post"])
+    def evidence(self, request, pk=None):
+        """
+        Upload evidence (photo/receipt/etc.) for this visit.
+        """
+        visit = self.get_object()
+        if visit.mystery_guest != request.user:
+            return Response(
+                {"error": "You are not assigned to this visit."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = MysteryEvidenceSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        evidence = serializer.save(visit=visit)
+        return Response(
+            MysteryEvidenceSerializer(evidence, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 

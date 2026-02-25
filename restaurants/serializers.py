@@ -1,9 +1,26 @@
 from rest_framework import serializers
 
 from .models import (
-    Country, City, RestaurantCategory, Restaurant, Deal,
-    RestaurantImage, DealImage, SavedRestaurant, SavedDeal, DealUse,
-    Cuisine, Review, Booking, MenuCategory, MenuItem, OpeningSlot, RestaurantProfile
+    Country,
+    City,
+    RestaurantCategory,
+    Restaurant,
+    Deal,
+    RestaurantImage,
+    DealImage,
+    SavedRestaurant,
+    SavedDeal,
+    DealUse,
+    Cuisine,
+    Review,
+    Booking,
+    MenuCategory,
+    MenuItem,
+    OpeningSlot,
+    RestaurantProfile,
+    MysteryVisit,
+    MysteryScore,
+    MysteryEvidence,
 )
 
 
@@ -100,7 +117,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "city_id", "city", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
-            "price_range", "verified", "is_featured", "opening_hours",
+            "price_range", "occupancy", "verified", "is_featured", "opening_hours",
             "images", "active_deals_count", "is_saved", "created_at"
         )
         read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "images")
@@ -165,13 +182,16 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     country_name = serializers.CharField(source="city.country.name", read_only=True)
     primary_image = serializers.SerializerMethodField()
     active_deals_count = serializers.IntegerField(read_only=True)
+    leaderboard_score = serializers.SerializerMethodField()
+    distance_miles = serializers.SerializerMethodField()
     
     class Meta:
         model = Restaurant
         fields = (
             "id", "name", "slug", "city_name", "country_name",
-            "latitude", "longitude", "price_range", "verified",
-            "is_featured", "primary_image", "active_deals_count"
+            "latitude", "longitude", "price_range", "occupancy", "verified",
+            "is_featured", "primary_image", "active_deals_count",
+            "leaderboard_score", "distance_miles"
         )
         
     def get_primary_image(self, obj):
@@ -184,6 +204,13 @@ class RestaurantListSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(primary_img.image.url)
             return primary_img.image.url
         return None
+
+    def get_leaderboard_score(self, obj):
+        return obj.get_leaderboard_score()
+
+    def get_distance_miles(self, obj):
+        value = getattr(obj, "_distance_miles", None)
+        return round(value, 2) if isinstance(value, (int, float)) else None
 
 
 class DealImageSerializer(serializers.ModelSerializer):
@@ -570,7 +597,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "city", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website",
-            "categories", "cuisines", "price_range", "verified", "is_featured",
+            "categories", "cuisines", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
             "is_favourite", "distance", "created_at"
@@ -622,6 +649,91 @@ class RestaurantProfileSerializer(serializers.ModelSerializer):
         model = RestaurantProfile
         fields = ("id", "user", "user_email", "restaurant", "is_primary_owner", "created_at")
         read_only_fields = ("user", "restaurant")
+
+
+class MysteryEvidenceSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MysteryEvidence
+        fields = ("id", "file", "file_url", "description", "created_at")
+        read_only_fields = ("file_url", "created_at")
+
+    def get_file_url(self, obj):
+        if not obj.file:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.file.url)
+        return obj.file.url
+
+
+class MysteryScoreSerializer(serializers.ModelSerializer):
+    section_display = serializers.CharField(source="get_section_display", read_only=True)
+
+    class Meta:
+        model = MysteryScore
+        fields = ("id", "section", "section_display", "score", "comment", "created_at")
+
+
+class MysteryVisitSerializer(serializers.ModelSerializer):
+    restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
+    restaurant_city = serializers.CharField(source="restaurant.city.name", read_only=True)
+    scores = MysteryScoreSerializer(many=True, read_only=True)
+    evidence = MysteryEvidenceSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = MysteryVisit
+        fields = (
+            "id",
+            "restaurant",
+            "restaurant_name",
+            "restaurant_city",
+            "mystery_guest",
+            "scheduled_for",
+            "started_at",
+            "submitted_at",
+            "status",
+            "overall_score",
+            "is_risk_flagged",
+            "comments",
+            "scores",
+            "evidence",
+            "created_at",
+        )
+        read_only_fields = (
+            "mystery_guest",
+            "started_at",
+            "submitted_at",
+            "status",
+            "overall_score",
+            "created_at",
+        )
+
+
+class MysteryVisitSubmitSerializer(serializers.Serializer):
+    """
+    Payload for submitting a completed mystery visit evaluation.
+
+    All core questionnaire sections are required and scored 0–10.
+    """
+
+    pre_visit_score = serializers.IntegerField(min_value=0, max_value=10)
+    ambience_score = serializers.IntegerField(min_value=0, max_value=10)
+    service_score = serializers.IntegerField(min_value=0, max_value=10)
+    food_score = serializers.IntegerField(min_value=0, max_value=10)
+    discount_experience_score = serializers.IntegerField(min_value=0, max_value=10)
+    hygiene_score = serializers.IntegerField(min_value=0, max_value=10)
+
+    pre_visit_comment = serializers.CharField(required=False, allow_blank=True)
+    ambience_comment = serializers.CharField(required=False, allow_blank=True)
+    service_comment = serializers.CharField(required=False, allow_blank=True)
+    food_comment = serializers.CharField(required=False, allow_blank=True)
+    discount_experience_comment = serializers.CharField(required=False, allow_blank=True)
+    hygiene_comment = serializers.CharField(required=False, allow_blank=True)
+
+    is_risk_flagged = serializers.BooleanField(required=False, default=False)
+    comments = serializers.CharField(required=False, allow_blank=True)
 
 
 class DealRedemptionRequestSerializer(serializers.Serializer):

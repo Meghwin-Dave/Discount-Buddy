@@ -106,6 +106,24 @@ class IsRestaurantOwner(BasePermission):
         return False
 
 
+class IsMysteryGuest(BasePermission):
+    """
+    Permission for Mystery Guest evaluators.
+
+    These users can access assigned restaurants, submit reports, and upload
+    evidence but cannot modify restaurant data.
+    """
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        try:
+            profile = request.user.profile
+            return profile.role == UserProfile.ROLE_MYSTERY_GUEST
+        except UserProfile.DoesNotExist:
+            return False
+
+
 # New permissions for mobile app roles
 class IsUser(BasePermission):
     """

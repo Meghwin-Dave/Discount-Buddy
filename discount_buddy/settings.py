@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import timedelta
 
 from dotenv import load_dotenv
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -321,4 +322,13 @@ CELERY_TASK_RETRY_KWARGS = {"max_retries": 3, "countdown": 5}
 # celery -A discount_buddy worker --loglevel=info
 # To run Celery beat (for scheduled tasks):
 # celery -A discount_buddy beat --loglevel=info
+
+# Periodic schedules
+CELERY_BEAT_SCHEDULE = {
+    "assign-monthly-mystery-visits": {
+        "task": "restaurants.tasks.assign_monthly_mystery_visits",
+        # Run daily at 03:00 UTC; logic in the task respects required_visit_gap
+        "schedule": crontab(hour=3, minute=0),
+    },
+}
 

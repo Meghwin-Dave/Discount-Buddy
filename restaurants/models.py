@@ -1,6 +1,7 @@
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+import math
 
 from core.models import TimeStampedModel, SoftDeleteModel
 from users.models import User
@@ -88,6 +89,22 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
         validators=[MinValueValidator(1), MaxValueValidator(4)],
         help_text="Price range from 1 (budget) to 4 (expensive)"
     )
+    OCCUPANCY_AVAILABLE = "available"
+    OCCUPANCY_MODERATELY_BUSY = "moderately_busy"
+    OCCUPANCY_VERY_BUSY = "very_busy"
+
+    OCCUPANCY_CHOICES = [
+        (OCCUPANCY_AVAILABLE, "Available"),
+        (OCCUPANCY_MODERATELY_BUSY, "Moderately Busy"),
+        (OCCUPANCY_VERY_BUSY, "Very Busy"),
+    ]
+
+    occupancy = models.CharField(
+        max_length=32,
+        choices=OCCUPANCY_CHOICES,
+        default=OCCUPANCY_AVAILABLE,
+        help_text="Current occupancy status as shown to users.",
+    )
     
     # Status
     verified = models.BooleanField(default=False, db_index=True)
@@ -95,6 +112,12 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
     
     # Hours (simple JSON field - can be extended later)
     opening_hours = models.JSONField(default=dict, blank=True)
+
+    # Mystery Guest configuration
+    required_visit_gap = models.PositiveIntegerField(
+        default=30,
+        help_text="Required minimum gap in days between scheduled mystery visits.",
+    )
     
     class Meta:
         ordering = ["-is_featured", "-created_at"]
@@ -137,6 +160,71 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
         if not slot or slot.is_closed:
             return False
         return slot.opening_time <= current_time <= slot.closing_time
+
+    @property
+    def last_mystery_visit(self):
+        """Return the most recent completed mystery visit for this restaurant."""
+        return getattr(self, "_last_mystery_visit", None)
+
+    @property
+    def next_mystery_visit(self):
+        """Return the next scheduled mystery visit for this restaurant."""
+        return getattr(self, "_next_mystery_visit", None)
+
+    def get_latest_mystery_visit(self):
+        """Return the most recent submitted mystery visit, if any."""
+        from .models import MysteryVisit  # local import to avoid circulars
+
+        return (
+            MysteryVisit.objects.filter(
+                restaurant=self, status=MysteryVisit.STATUS_SUBMITTED
+            )
+            .order_by("-submitted_at", "-scheduled_for")
+            .first()
+        )
+
+    def get_mystery_score_with_decay(self, now=None) -> float:
+        """
+        Return the decayed mystery score on a 0–100 scale.
+
+        Implements freshness decay so older visits contribute less:
+        - Uses exponential decay with a 90-day time constant.
+        """
+        now = now or timezone.now()
+        visit = self.get_latest_mystery_visit()
+        if not visit or visit.overall_score is None:
+            return 0.0
+
+        reference_date = visit.submitted_at or visit.scheduled_for or visit.created_at
+        if not reference_date:
+            return float(visit.overall_score)
+
+        days_since = (now - reference_date).days
+        if days_since <= 0:
+            return float(visit.overall_score)
+
+        # Exponential decay; around ~37% contribution after 90 days.
+        decay_factor = math.exp(-days_since / 90.0)
+        return float(visit.overall_score) * decay_factor
+
+    def get_leaderboard_score(self, now=None) -> float:
+        """
+        Leaderboard Score = (User Rating × 40%) + (Mystery Score × 60%)
+
+        - User Rating is the average review rating (0–5) normalised to 0–100.
+        - Mystery Score is the decayed overall mystery score (0–100).
+        """
+        now = now or timezone.now()
+
+        # Average user rating on 0–5
+        avg_rating = getattr(self, "average_rating", None)
+        if avg_rating is None:
+            avg_rating = self.get_average_rating()
+        user_component = float(avg_rating or 0.0) * 20.0  # 0–5 → 0–100
+
+        mystery_component = self.get_mystery_score_with_decay(now=now)
+
+        return round(user_component * 0.4 + mystery_component * 0.6, 2)
 
 
 class Deal(TimeStampedModel, SoftDeleteModel):
@@ -547,6 +635,129 @@ class RestaurantProfile(TimeStampedModel):
         
     def __str__(self):
         return f"{self.user.email} - {self.restaurant.name}"
+
+
+class MysteryVisit(TimeStampedModel):
+    """Mystery Guest visit assignment and report."""
+
+    STATUS_ASSIGNED = "assigned"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_SUBMITTED = "submitted"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_ASSIGNED, "Assigned"),
+        (STATUS_IN_PROGRESS, "In Progress"),
+        (STATUS_SUBMITTED, "Submitted"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    mystery_guest = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="mystery_visits",
+        help_text="Mystery Guest assigned to perform this visit.",
+    )
+    restaurant = models.ForeignKey(
+        Restaurant,
+        on_delete=models.CASCADE,
+        related_name="mystery_visits",
+    )
+    scheduled_for = models.DateTimeField(
+        help_text="Planned date/time for the visit.",
+    )
+    started_at = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_ASSIGNED,
+        db_index=True,
+    )
+    overall_score = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Final weighted mystery score (0–100).",
+    )
+    is_risk_flagged = models.BooleanField(
+        default=False,
+        help_text="Flag for restaurants requiring quality follow-up.",
+    )
+    comments = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-scheduled_for"]
+        indexes = [
+            models.Index(fields=["restaurant", "scheduled_for"]),
+            models.Index(fields=["mystery_guest", "scheduled_for"]),
+            models.Index(fields=["status", "scheduled_for"]),
+        ]
+
+    def __str__(self):
+        return f"Mystery visit to {self.restaurant.name} by {self.mystery_guest.email}"
+
+
+class MysteryScore(TimeStampedModel):
+    """Section-wise scores for a mystery visit."""
+
+    SECTION_PRE_VISIT = "pre_visit"
+    SECTION_AMBIENCE = "ambience"
+    SECTION_SERVICE = "service"
+    SECTION_FOOD = "food"
+    SECTION_DISCOUNT_EXPERIENCE = "discount_experience"
+    SECTION_HYGIENE = "hygiene"
+
+    SECTION_CHOICES = [
+        (SECTION_PRE_VISIT, "Pre-Visit"),
+        (SECTION_AMBIENCE, "Ambience"),
+        (SECTION_SERVICE, "Service"),
+        (SECTION_FOOD, "Food"),
+        (SECTION_DISCOUNT_EXPERIENCE, "Discount Experience"),
+        (SECTION_HYGIENE, "Hygiene"),
+    ]
+
+    visit = models.ForeignKey(
+        MysteryVisit,
+        on_delete=models.CASCADE,
+        related_name="scores",
+    )
+    section = models.CharField(max_length=50, choices=SECTION_CHOICES, db_index=True)
+    score = models.PositiveIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+        help_text="Section score on a 0–10 scale.",
+    )
+    comment = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = [["visit", "section"]]
+        indexes = [
+            models.Index(fields=["visit", "section"]),
+        ]
+
+    def __str__(self):
+        return f"{self.visit} - {self.get_section_display()}: {self.score}"
+
+
+class MysteryEvidence(TimeStampedModel):
+    """Evidence uploaded by Mystery Guests: photos, receipts, etc."""
+
+    visit = models.ForeignKey(
+        MysteryVisit,
+        on_delete=models.CASCADE,
+        related_name="evidence",
+    )
+    file = models.FileField(upload_to="mystery_evidence/%Y/%m/%d/")
+    description = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["visit", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Evidence for visit {self.visit_id}"
 
 
 # Alias models for clarity (using existing models)

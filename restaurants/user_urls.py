@@ -15,6 +15,7 @@ from .views import (
     ReviewViewSet,
     BookingViewSet,
     ProfileStatsView,
+    MysteryVisitViewSet,
 )
 
 router = DefaultRouter(trailing_slash=False)
@@ -26,6 +27,7 @@ router.register(r"deals", DealViewSet, basename="deal")
 router.register(r"deal-uses", DealUseViewSet, basename="deal-use")
 router.register(r"reviews", ReviewViewSet, basename="review")
 router.register(r"bookings", BookingViewSet, basename="booking")
+router.register(r"mystery-visits", MysteryVisitViewSet, basename="mystery-visit")
 
 urlpatterns = [
     # Public endpoints
