@@ -233,10 +233,17 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=False, methods=["get"], permission_classes=[AllowAny])
     def nearby(self, request):
-        """Get nearby restaurants based on coordinates"""
+        """
+        Get nearby restaurants based on user coordinates, sorted by distance in miles.
+
+        Query params:
+        - latitude (required)
+        - longitude (required)
+        - radius (optional, miles; default 10)
+        """
         lat = request.query_params.get("latitude")
         lon = request.query_params.get("longitude")
-        radius = float(request.query_params.get("radius", 10))
+        radius_miles = float(request.query_params.get("radius", 10))
         
         if not lat or not lon:
             return Response(
@@ -253,9 +260,12 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Get all restaurants within bounding box
-        lat_delta = radius / 111.0
-        lon_delta = radius / (111.0 * abs(math.cos(math.radians(lat))))
+        # Convert radius from miles to km for calculations
+        radius_km = radius_miles * 1.60934
+
+        # Get all restaurants within bounding box (km)
+        lat_delta = radius_km / 111.0
+        lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
         
         restaurants = Restaurant.objects.filter(
             is_active=True,
@@ -272,17 +282,22 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         restaurants_with_distance = []
         for restaurant in restaurants:
             if restaurant.latitude and restaurant.longitude:
-                distance = calculate_distance(
+                distance_km = calculate_distance(
                     lat, lon,
                     float(restaurant.latitude),
                     float(restaurant.longitude)
                 )
-                if distance and distance <= radius:
-                    restaurants_with_distance.append((restaurant, distance))
+                if distance_km:
+                    distance_miles = distance_km * 0.621371
+                    if distance_miles <= radius_miles:
+                        restaurants_with_distance.append((restaurant, distance_miles))
         
         # Sort by distance
         restaurants_with_distance.sort(key=lambda x: x[1])
-        restaurants = [r[0] for r in restaurants_with_distance]
+        restaurants = []
+        for r, distance_miles in restaurants_with_distance:
+            r._distance_miles = distance_miles
+            restaurants.append(r)
         
         serializer = RestaurantListSerializer(restaurants, many=True, context={"request": request})
         return Response(serializer.data)

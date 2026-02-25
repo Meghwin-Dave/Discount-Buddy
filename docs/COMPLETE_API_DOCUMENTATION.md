@@ -1214,6 +1214,7 @@ curl -X GET "http://127.0.0.1:8000/merchant/api/restaurants/restaurant/bookings/
 |--------|----------|-------------|---------------|
 | GET | `/user/api/restaurants/home/` | Home screen data | No |
 | GET | `/user/api/restaurants/restaurants/` | List restaurants | No |
+| GET | `/user/api/restaurants/restaurants/nearby?latitude={lat}&longitude={lon}&radius={miles}` | Nearby restaurants sorted by distance (miles) | No |
 | GET | `/user/api/restaurants/restaurant-detail/{slug}/` | Restaurant details | No |
 | GET | `/user/api/restaurants/deals/` | List deals | No |
 | GET | `/user/api/restaurants/cities/` | List cities | No |

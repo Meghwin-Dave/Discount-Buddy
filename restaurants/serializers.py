@@ -183,13 +183,15 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     primary_image = serializers.SerializerMethodField()
     active_deals_count = serializers.IntegerField(read_only=True)
     leaderboard_score = serializers.SerializerMethodField()
+    distance_miles = serializers.SerializerMethodField()
     
     class Meta:
         model = Restaurant
         fields = (
             "id", "name", "slug", "city_name", "country_name",
             "latitude", "longitude", "price_range", "verified",
-            "is_featured", "primary_image", "active_deals_count", "leaderboard_score"
+            "is_featured", "primary_image", "active_deals_count",
+            "leaderboard_score", "distance_miles"
         )
         
     def get_primary_image(self, obj):
@@ -205,6 +207,10 @@ class RestaurantListSerializer(serializers.ModelSerializer):
 
     def get_leaderboard_score(self, obj):
         return obj.get_leaderboard_score()
+
+    def get_distance_miles(self, obj):
+        value = getattr(obj, "_distance_miles", None)
+        return round(value, 2) if isinstance(value, (int, float)) else None
 
 
 class DealImageSerializer(serializers.ModelSerializer):
