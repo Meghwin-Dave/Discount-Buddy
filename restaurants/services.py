@@ -1,3 +1,4 @@
+import math
 import random
 from dataclasses import dataclass
 from io import BytesIO
@@ -9,6 +10,37 @@ from django.utils import timezone
 
 from .models import Deal, DealUse, Restaurant
 from users.models import User
+
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """Calculate distance between two points using Haversine formula (in km)"""
+    try:
+        if lat1 is None or lon1 is None or lat2 is None or lon2 is None:
+            return None
+        
+        # Convert to float just in case they are Decimals or strings
+        f_lat1, f_lon1, f_lat2, f_lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
+        
+        R = 6371  # Earth's radius in kilometers
+        dlat = math.radians(f_lat2 - f_lat1)
+        dlon = math.radians(f_lon2 - f_lon1)
+        a = (math.sin(dlat / 2) ** 2 +
+             math.cos(math.radians(f_lat1)) * math.cos(math.radians(f_lat2)) *
+             math.sin(dlon / 2) ** 2)
+        c = 2 * math.asin(math.sqrt(a))
+        result = R * c
+        # print(f"DEBUG: calculate_distance inputs({lat1}, {lon1}, {lat2}, {lon2}) -> {result}")
+        return result
+    except (ValueError, TypeError) as e:
+        # print(f"DEBUG: calculate_distance error: {e}")
+        return None
+
+
+def km_to_miles(km):
+    """Convert kilometers to miles"""
+    if km is None:
+        return None
+    return km * 0.621371
 
 
 def _generate_six_digit_code() -> str:

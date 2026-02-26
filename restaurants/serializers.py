@@ -209,7 +209,14 @@ class RestaurantListSerializer(serializers.ModelSerializer):
         return obj.get_leaderboard_score()
 
     def get_distance_miles(self, obj):
+        # Check pre-calculated miles or convert from pre-calculated km
         value = getattr(obj, "_distance_miles", None)
+        if value is None:
+            dist_km = getattr(obj, "_distance", None)
+            if dist_km is not None:
+                from .services import km_to_miles
+                value = km_to_miles(dist_km)
+                
         return round(value, 2) if isinstance(value, (int, float)) else None
 
 
@@ -591,6 +598,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
     is_open_now = serializers.SerializerMethodField()
     is_favourite = serializers.SerializerMethodField()
     distance = serializers.SerializerMethodField()
+    distance_miles = serializers.SerializerMethodField()
     
     class Meta:
         model = Restaurant
@@ -600,7 +608,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "categories", "cuisines", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
-            "is_favourite", "distance", "created_at"
+            "is_favourite", "distance", "distance_miles", "created_at"
         )
         
     def get_reviews(self, obj):
@@ -637,8 +645,29 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         return False
     
     def get_distance(self, obj):
-        # Distance will be calculated in the view if lat/lng provided
-        return getattr(obj, '_distance', None)
+        # 1. Check if KM distance is pre-calculated
+        dist_km = getattr(obj, '_distance', None)
+        if dist_km is not None:
+            return round(dist_km, 2)
+        
+        # 2. Try to get it from pre-calculated miles
+        dist_miles = getattr(obj, '_distance_miles', None)
+        if dist_miles is not None:
+            return round(dist_miles * 1.60934, 2)
+        return None
+
+    def get_distance_miles(self, obj):
+        # 1. Check if it's already pre-calculated as miles
+        value = getattr(obj, "_distance_miles", None)
+        
+        # 2. Check if it's pre-calculated as km
+        if value is None:
+            dist_km = getattr(obj, "_distance", None)
+            if dist_km is not None:
+                from .services import km_to_miles
+                value = km_to_miles(dist_km)
+        
+        return round(value, 2) if isinstance(value, (int, float)) else None
 
 
 class RestaurantProfileSerializer(serializers.ModelSerializer):
@@ -679,6 +708,7 @@ class MysteryScoreSerializer(serializers.ModelSerializer):
 class MysteryVisitSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     restaurant_city = serializers.CharField(source="restaurant.city.name", read_only=True)
+    restaurant_slug = serializers.CharField(source="restaurant.slug", read_only=True)
     scores = MysteryScoreSerializer(many=True, read_only=True)
     evidence = MysteryEvidenceSerializer(many=True, read_only=True)
 
@@ -689,6 +719,7 @@ class MysteryVisitSerializer(serializers.ModelSerializer):
             "restaurant",
             "restaurant_name",
             "restaurant_city",
+            "restaurant_slug",
             "mystery_guest",
             "scheduled_for",
             "started_at",

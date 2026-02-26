@@ -59,7 +59,7 @@ from .serializers import (
     MysteryVisitSubmitSerializer,
     MysteryEvidenceSerializer,
 )
-from .services import redeem_deal
+from .services import redeem_deal, calculate_distance, km_to_miles
 from users.permissions import (
     IsMerchant,
     IsUser,
@@ -69,18 +69,6 @@ from users.permissions import (
 )
 
 
-def calculate_distance(lat1, lon1, lat2, lon2):
-    """Calculate distance between two points using Haversine formula (in km)"""
-    if not all([lat1, lon1, lat2, lon2]):
-        return None
-    R = 6371  # Earth's radius in kilometers
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) ** 2)
-    c = 2 * math.asin(math.sqrt(a))
-    return R * c
 
 
 class CountryListView(generics.ListAPIView):
@@ -569,13 +557,15 @@ class HomeScreenView(generics.GenericAPIView):
         from django.db.models import Avg, Count
         
         # Get query parameters
-        search_query = request.query_params.get("q", "").strip()
-        cuisine_id = request.query_params.get("cuisine")
-        city_id = request.query_params.get("city")
-        latitude = request.query_params.get("latitude")
-        longitude = request.query_params.get("longitude")
-        now_open = request.query_params.get("now_open", "false").lower() == "true"
-        radius = float(request.query_params.get("radius", 10))  # km
+        params = request.query_params
+        search_query = params.get("q", "").strip()
+        cuisine_id = params.get("cuisine")
+        city_id = params.get("city")
+        latitude = params.get("latitude") or params.get("lat")
+        longitude = params.get("longitude") or params.get("lon")
+        now_open = params.get("now_open", "false").lower() == "true"
+        radius_miles = float(params.get("radius", 10))  # default 10 miles
+        radius_km = radius_miles * 1.60934
         
         # Base queryset
         queryset = Restaurant.objects.filter(
@@ -626,8 +616,8 @@ class HomeScreenView(generics.GenericAPIView):
                 lon = float(longitude)
                 
                 # Bounding box filter
-                lat_delta = radius / 111.0
-                lon_delta = radius / (111.0 * abs(math.cos(math.radians(lat))))
+                lat_delta = radius_km / 111.0
+                lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
                 
                 nearby_qs = queryset.filter(
                     latitude__gte=lat - lat_delta,
@@ -642,19 +632,32 @@ class HomeScreenView(generics.GenericAPIView):
                 restaurants_with_distance = []
                 for restaurant in nearby_qs:
                     if restaurant.latitude and restaurant.longitude:
-                        dist = calculate_distance(
+                        dist_km = calculate_distance(
                             lat, lon,
                             float(restaurant.latitude),
                             float(restaurant.longitude)
                         )
-                        if dist and dist <= radius:
-                            restaurant._distance = dist
-                            restaurants_with_distance.append((restaurant, dist))
+                        if dist_km and dist_km <= radius_km:
+                            dist_miles = km_to_miles(dist_km)
+                            restaurant._distance_miles = dist_miles
+                            restaurants_with_distance.append((restaurant, dist_miles))
                 
                 restaurants_with_distance.sort(key=lambda x: x[1])
                 nearby_restaurants = [r[0] for r in restaurants_with_distance]
             except (ValueError, TypeError):
                 pass
+        
+        def populate_distances(res_list):
+            """Helper to add _distance_miles to a list of restaurants if coordinates are provided"""
+            if not latitude or not longitude:
+                return res_list
+            
+            # If it's a list already, we can modify it
+            for r in res_list:
+                if r.latitude and r.longitude and not hasattr(r, '_distance_miles'):
+                    dist_km = calculate_distance(latitude, longitude, r.latitude, r.longitude)
+                    r._distance_miles = km_to_miles(dist_km)
+            return res_list
         
         # Now Open filter
         now_open_restaurants = None
@@ -672,7 +675,8 @@ class HomeScreenView(generics.GenericAPIView):
                 closing_time__gte=current_time
             ).values_list("restaurant_id", flat=True)
             
-            now_open_restaurants = queryset.filter(id__in=open_restaurant_ids)
+            now_open_restaurants = list(queryset.filter(id__in=open_restaurant_ids))
+            now_open_restaurants = populate_distances(now_open_restaurants)
         
         # Top 10 in City (by leaderboard score: user rating + mystery score with decay)
         restaurants_for_top = list(queryset)
@@ -683,6 +687,7 @@ class HomeScreenView(generics.GenericAPIView):
             key=lambda r: getattr(r, "_leaderboard_score", 0.0),
             reverse=True,
         )[:10]
+        top_10 = populate_distances(top_10)
         
         # Cuisine-based segregation
         cuisines = Cuisine.objects.filter(
@@ -694,7 +699,8 @@ class HomeScreenView(generics.GenericAPIView):
         
         cuisine_data = []
         for cuisine in cuisines:
-            cuisine_restaurants = queryset.filter(cuisines=cuisine)[:10]
+            cuisine_restaurants = list(queryset.filter(cuisines=cuisine)[:10])
+            cuisine_restaurants = populate_distances(cuisine_restaurants)
             cuisine_data.append({
                 "cuisine": CuisineSerializer(cuisine, context={"request": request}).data,
                 "restaurants": RestaurantListSerializer(
@@ -705,7 +711,8 @@ class HomeScreenView(generics.GenericAPIView):
             })
         
         # All restaurants (card format) – keep default ordering but include leaderboard_score in payload
-        all_restaurants = queryset.order_by("-is_featured", "-average_rating")[:50]
+        all_restaurants = list(queryset.order_by("-is_featured", "-average_rating")[:50])
+        all_restaurants = populate_distances(all_restaurants)
         
         return Response({
             "search_query": search_query,
@@ -755,16 +762,15 @@ class RestaurantDetailViewSet(viewsets.ReadOnlyModelViewSet):
         instance = self.get_object()
         
         # Calculate distance if coordinates provided
-        lat = request.query_params.get("latitude")
-        lon = request.query_params.get("longitude")
-        if lat and lon and instance.latitude and instance.longitude:
+        params = request.query_params
+        lat = params.get("latitude") or params.get("lat")
+        lon = params.get("longitude") or params.get("lon")
+        
+        if lat and lon and instance.latitude is not None and instance.longitude is not None:
             try:
-                distance = calculate_distance(
-                    float(lat), float(lon),
-                    float(instance.latitude),
-                    float(instance.longitude)
-                )
-                instance._distance = distance
+                distance = calculate_distance(lat, lon, instance.latitude, instance.longitude)
+                if distance is not None:
+                    instance._distance = distance
             except (ValueError, TypeError):
                 pass
         
