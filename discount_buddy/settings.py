@@ -141,6 +141,17 @@ AUTH_USER_MODEL = "users.User"
 # Google OAuth – set in .env (never commit real values)
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
+GOOGLE_OAUTH_ANDROID_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_ANDROID_CLIENT_ID", "")
+GOOGLE_OAUTH_IOS_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_IOS_CLIENT_ID", "")
+
+# List of all allowed client IDs for token verification (e.g. from mobile apps)
+GOOGLE_OAUTH_ALLOWED_CLIENT_IDS = [
+    cid for cid in [
+        GOOGLE_OAUTH_CLIENT_ID,
+        GOOGLE_OAUTH_ANDROID_CLIENT_ID,
+        GOOGLE_OAUTH_IOS_CLIENT_ID
+    ] if cid
+]
 
 # Email configuration (for OTP and notifications)
 # Use Gmail App Password: https://myaccount.google.com/apppasswords

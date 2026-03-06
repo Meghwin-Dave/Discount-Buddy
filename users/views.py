@@ -187,8 +187,8 @@ class GoogleIdTokenLoginView(APIView):
                 {"detail": "id_token or credential is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        client_id = getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None)
-        if not client_id:
+        client_ids = getattr(settings, "GOOGLE_OAUTH_ALLOWED_CLIENT_IDS", [])
+        if not client_ids:
             return Response(
                 {"detail": "Google OAuth is not configured."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -197,7 +197,7 @@ class GoogleIdTokenLoginView(APIView):
             idinfo = id_token.verify_oauth2_token(
                 id_token_str,
                 google_requests.Request(),
-                client_id,
+                client_ids,
             )
         except ValueError as e:
             return Response(
