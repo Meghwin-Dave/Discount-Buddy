@@ -575,7 +575,7 @@ class HomeScreenView(generics.GenericAPIView):
             "categories", "cuisines", "images"
         ).annotate(
             average_rating=Avg("reviews__rating"),
-            reviews_count=Count("reviews"),
+            reviews_count=Count("reviews", distinct=True),
             active_deals_count=Count(
                 "deals",
                 filter=Q(

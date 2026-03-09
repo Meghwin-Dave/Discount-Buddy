@@ -181,6 +181,8 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     city_name = serializers.CharField(source="city.name", read_only=True)
     country_name = serializers.CharField(source="city.country.name", read_only=True)
     primary_image = serializers.SerializerMethodField()
+    average_rating = serializers.FloatField(read_only=True, default=0.0)
+    review_count = serializers.IntegerField(source="reviews_count", read_only=True, default=0)
     active_deals_count = serializers.IntegerField(read_only=True)
     leaderboard_score = serializers.SerializerMethodField()
     distance_miles = serializers.SerializerMethodField()
@@ -190,8 +192,8 @@ class RestaurantListSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
-            "is_featured", "primary_image", "active_deals_count",
-            "leaderboard_score", "distance_miles"
+            "is_featured", "primary_image", "average_rating", "review_count",
+            "active_deals_count", "leaderboard_score", "distance_miles"
         )
         
     def get_primary_image(self, obj):
