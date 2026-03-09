@@ -22,6 +22,13 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "username", "is_merchant", "is_customer", "profile")
 
 
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ("username",)
+
+
+
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Custom serializer to add username, role, and current date to login response"""
     

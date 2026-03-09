@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "wallet",
     "restaurants",
     "notifications",
+    "configs",
     # "orders",
     # "marketplace",
 ]
