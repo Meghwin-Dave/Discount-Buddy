@@ -1450,3 +1450,58 @@ class MerchantDashboardView(APIView):
             "primary_restaurant_id": restaurant_id,
             "primary_restaurant_occupancy": occupancy,
         })
+
+
+class UpdateOccupancyView(APIView):
+    """
+    PATCH /merchant/restaurant/occupancy
+    Body: { "restaurant_id": <int>, "occupancy": "available"|"moderately_busy"|"very_busy" }
+    Updates the occupancy status of the merchant's restaurant.
+    """
+    permission_classes = [IsMerchant]
+
+    def patch(self, request):
+        from vouchers.models import Merchant
+        from users.models import UserProfile
+
+        try:
+            if request.user.profile.role != UserProfile.ROLE_MERCHANT:
+                return Response({"error": "User is not a merchant."}, status=status.HTTP_403_FORBIDDEN)
+        except UserProfile.DoesNotExist:
+            return Response({"error": "User profile not found."}, status=status.HTTP_403_FORBIDDEN)
+
+        merchant, _ = Merchant.objects.get_or_create(
+            user=request.user,
+            defaults={'name': request.user.username or request.user.email}
+        )
+
+        restaurant_id = request.data.get("restaurant_id")
+        new_occupancy = request.data.get("occupancy")
+
+        valid_choices = [Restaurant.OCCUPANCY_AVAILABLE, Restaurant.OCCUPANCY_MODERATELY_BUSY, Restaurant.OCCUPANCY_VERY_BUSY]
+        if new_occupancy not in valid_choices:
+            return Response(
+                {"error": f"Invalid occupancy. Must be one of: {', '.join(valid_choices)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # If no restaurant_id given, default to merchant's primary restaurant
+        if restaurant_id:
+            try:
+                restaurant = merchant.restaurants.get(id=restaurant_id)
+            except Restaurant.DoesNotExist:
+                return Response({"error": "Restaurant not found or does not belong to you."}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            restaurant = merchant.restaurants.first()
+            if not restaurant:
+                return Response({"error": "No restaurant found for this merchant."}, status=status.HTTP_404_NOT_FOUND)
+
+        restaurant.occupancy = new_occupancy
+        restaurant.save(update_fields=["occupancy", "updated_at"])
+
+        return Response({
+            "detail": "Occupancy updated successfully.",
+            "restaurant_id": restaurant.id,
+            "occupancy": restaurant.occupancy,
+        })
+

@@ -13,6 +13,7 @@ from .views import (
     RestaurantBookingsManagementViewSet,
     DealRedemptionView,
     MerchantDashboardView,
+    UpdateOccupancyView,
 )
 
 router = DefaultRouter(trailing_slash=False)
@@ -32,6 +33,7 @@ urlpatterns = [
     # Restaurant management endpoints
     path("dashboard", MerchantDashboardView.as_view(), name="merchant-dashboard"),
     path("restaurant/reviews", RestaurantReviewsManagementView.as_view(), name="restaurant-reviews"),
+    path("restaurant/occupancy", UpdateOccupancyView.as_view(), name="restaurant-occupancy"),
     path("deals/redeem", DealRedemptionView.as_view(), name="deal-redeem"),
     # Router URLs
     path("", include(router.urls)),
