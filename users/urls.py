@@ -9,6 +9,7 @@ from .views import (
     LoginView,
     RefreshTokenView,
     GoogleIdTokenLoginView,
+    DeleteAccountView,
 )
 
 urlpatterns = [
@@ -24,6 +25,7 @@ urlpatterns = [
     path("token", LoginView.as_view(), name="token_obtain_pair"),
     path("token/refresh", RefreshTokenView.as_view(), name="token_refresh"),
     path("google", GoogleIdTokenLoginView.as_view(), name="google_id_token_login"),
+    path("account-delete", DeleteAccountView.as_view(), name="account-delete"),
 ]
 
 

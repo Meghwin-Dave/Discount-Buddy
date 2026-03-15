@@ -1,6 +1,7 @@
 import random
 from datetime import timedelta
 
+import threading
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -63,7 +64,15 @@ class RegisterInitView(APIView):
         subject = "Your Discount Buddy verification code"
         message = f"Your verification code is {otp_code}. It expires in 10 minutes."
 
-        send_mail(subject, message, from_email, [email], fail_silently=False)
+        # Send email asynchronously to improve response time
+        def send_otp_email():
+            try:
+                send_mail(subject, message, from_email, [email], fail_silently=False)
+            except Exception as e:
+                # Log the error if possible
+                pass
+
+        threading.Thread(target=send_otp_email).start()
 
         return Response(
             {"detail": "Verification code sent to your email."},
@@ -301,6 +310,21 @@ class GoogleIdTokenLoginView(APIView):
                 "is_customer": user.is_customer,
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class DeleteAccountView(APIView):
+    """
+    Allow users to delete their own account.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, *args, **kwargs):
+        user = request.user
+        user.delete()
+        return Response(
+            {"detail": "Account deleted successfully."},
+            status=status.HTTP_204_NO_CONTENT,
         )
 
 
