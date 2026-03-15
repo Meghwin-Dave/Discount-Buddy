@@ -137,6 +137,8 @@ def redeem_deal(
     actor: User,
     redemption_code: str | None = None,
     qr_data: str | None = None,
+    price: float | None = None,
+    people_count: int | None = None,
 ) -> RedemptionResult:
     """
     Redeem a deal either by 6-digit code or by QR payload.
@@ -202,7 +204,13 @@ def redeem_deal(
     deal_use.redeemed_at = timezone.now()
     deal_use.redeemed_by = actor
     deal_use.restaurant_confirmed = True
-    deal_use.save(update_fields=["is_redeemed", "redeemed_at", "redeemed_by", "restaurant_confirmed", "updated_at"])
+    
+    if price is not None:
+        deal_use.price = price
+    if people_count is not None:
+        deal_use.people_count = people_count
+        
+    deal_use.save(update_fields=["is_redeemed", "redeemed_at", "redeemed_by", "restaurant_confirmed", "price", "people_count", "updated_at"])
 
     return RedemptionResult(True, "Deal redeemed successfully.", deal_use)
 

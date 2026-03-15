@@ -993,6 +993,24 @@ class RestaurantManagementViewSet(viewsets.ModelViewSet):
         else:
             serializer.save()
 
+    @action(detail=True, methods=["post"])
+    def update_occupancy(self, request, pk=None):
+        """Update the occupancy status of the restaurant."""
+        restaurant = self.get_object()
+        occupancy = request.data.get("occupancy")
+        
+        if not occupancy:
+            return Response({"error": "Occupancy status is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        valid_statuses = [choice[0] for choice in Restaurant.OCCUPANCY_CHOICES]
+        if occupancy not in valid_statuses:
+            return Response({"error": f"Invalid occupancy status. Supported statuses are: {', '.join(valid_statuses)}"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        restaurant.occupancy = occupancy
+        restaurant.save(update_fields=["occupancy", "updated_at"])
+        
+        return Response({"success": True, "occupancy": restaurant.occupancy})
+
 
 class MenuManagementViewSet(viewsets.ModelViewSet):
     """ViewSet for restaurant owners to manage menu categories and items"""
@@ -1144,6 +1162,8 @@ class DealRedemptionView(APIView):
             actor=request.user,
             redemption_code=serializer.validated_data.get("redemption_code"),
             qr_data=serializer.validated_data.get("qr_data"),
+            price=serializer.validated_data.get("price"),
+            people_count=serializer.validated_data.get("people_count"),
         )
 
         if not result.success:
@@ -1373,7 +1393,7 @@ class MerchantDashboardView(APIView):
     def get(self, request):
         from vouchers.models import Merchant
         from users.models import UserProfile
-        from django.db.models import Avg
+        from django.db.models import Avg, Sum
         from datetime import timedelta
 
         try:
@@ -1409,9 +1429,24 @@ class MerchantDashboardView(APIView):
         # Using a semi-random but stable number based on booking count
         mock_views = total_bookings * 42 + 150
 
+        # Total Earnings
+        earnings_agg = DealUse.objects.filter(
+            deal__restaurant__merchant=merchant,
+            is_redeemed=True
+        ).aggregate(total=Sum('price'))
+        total_earnings = float(earnings_agg['total'] or 0.0)
+
+        # Primary restaurant (for occupancy toggle)
+        primary_restaurant = merchant.restaurants.first()
+        restaurant_id = primary_restaurant.id if primary_restaurant else None
+        occupancy = primary_restaurant.occupancy if primary_restaurant else None
+
         return Response({
             "total_bookings": total_bookings,
             "active_deals": active_deals,
             "average_rating": avg_rating,
             "total_views_30d": mock_views,
+            "total_earnings": total_earnings,
+            "primary_restaurant_id": restaurant_id,
+            "primary_restaurant_occupancy": occupancy,
         })

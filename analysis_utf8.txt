@@ -1,0 +1,15 @@
+Analyzing DiscountBuddy-App...                                  
+
+warning - Unused import: 'package:discount_buddy/design/app_shadows.dart' - lib\pages\bookings\user_bookings_page.dart:5:8 - unused_import
+warning - Unused import: '../../../design/app_shadows.dart' - lib\pages\events\events_page.dart:6:8 - unused_import
+   info - The member 'build' overrides an inherited member but isn't annotated with '@override' - lib\pages\home\home_page.dart:1126:10 - annotate_overrides
+warning - Unused import: 'package:discount_buddy/design/app_shadows.dart' - lib\pages\merchant\merchant_dashboard_page.dart:5:8 - unused_import
+warning - Unused import: 'package:discount_buddy/components/layout.dart' - lib\pages\merchant\merchant_dashboard_page.dart:7:8 - unused_import
+warning - Unused import: '../../providers/auth_provider.dart' - lib\pages\merchant\merchant_dashboard_page.dart:15:8 - unused_import
+warning - Unused import: 'package:provider/provider.dart' - lib\pages\merchant\merchant_dashboard_page.dart:16:8 - unused_import
+warning - The value of the field '_merchantService' isn't used - lib\pages\merchant\merchant_dashboard_page.dart:27:25 - unused_field
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\pages\merchant\merchant_dashboard_page.dart:502:30 - use_build_context_synchronously
+warning - Unused import: '../../design/app_radius.dart' - lib\pages\more\more_page.dart:3:8 - unused_import
+warning - Unused import: '../../design/app_shadows.dart' - lib\pages\more\more_page.dart:4:8 - unused_import
+warning - Unused import: '../widgets/loading_widget.dart' - lib\pages\profile_page.dart:17:8 - unused_import
+

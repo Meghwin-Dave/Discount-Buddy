@@ -336,6 +336,8 @@ class DealUseSerializer(serializers.ModelSerializer):
             "qr_code_url",
             "is_redeemed",
             "redeemed_at",
+            "price",
+            "people_count",
             "created_at",
         )
         read_only_fields = (
@@ -779,6 +781,8 @@ class DealRedemptionRequestSerializer(serializers.Serializer):
 
     redemption_code = serializers.CharField(max_length=6, required=False)
     qr_data = serializers.CharField(required=False)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, required=True)
+    people_count = serializers.IntegerField(min_value=1, required=True)
 
     def validate(self, attrs):
         redemption_code = attrs.get("redemption_code")

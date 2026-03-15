@@ -427,6 +427,8 @@ class DealUse(TimeStampedModel):
         related_name="redeemed_deal_uses",
         help_text="Restaurant staff user who performed the redemption",
     )
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    people_count = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         indexes = [
