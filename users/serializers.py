@@ -120,12 +120,21 @@ class RegisterInitSerializer(serializers.Serializer):
 
 class RegisterCompleteSerializer(serializers.Serializer):
     """
-    Stage 2 of registration: verify OTP and set password.
-
-    Username will be derived from the email's local part.
+    Stage 3 of registration: finalize with password.
+    
+    Email and same OTP are provided to confirm identity.
     """
 
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=4)
     password = serializers.CharField(write_only=True, min_length=6)
+
+
+class VerifyOTPSerializer(serializers.Serializer):
+    """
+    Stage 2 of registration: verify the OTP.
+    """
+
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=4)
 

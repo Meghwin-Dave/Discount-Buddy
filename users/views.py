@@ -20,6 +20,7 @@ from .serializers import (
     CustomTokenObtainPairSerializer,
     RegisterInitSerializer,
     RegisterCompleteSerializer,
+    VerifyOTPSerializer,
     UserUpdateSerializer,
 )
 
@@ -70,27 +71,19 @@ class RegisterInitView(APIView):
         )
 
 
-class RegisterCompleteView(APIView):
+class VerifyOTPView(APIView):
     """
-    Stage 2: verify OTP and create the user with a password.
+    Stage 2: verify OTP code.
     """
 
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
-        serializer = RegisterCompleteSerializer(data=request.data)
+        serializer = VerifyOTPSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         email = serializer.validated_data["email"]
         otp = serializer.validated_data["otp"]
-        password = serializer.validated_data["password"]
-
-        User = get_user_model()
-        if User.objects.filter(email=email).exists():
-            return Response(
-                {"detail": "A user with this email already exists."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         try:
             otp_obj = (
@@ -119,12 +112,73 @@ class RegisterCompleteView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Mark OTP as used.
+        # Mark OTP as verified (but not yet consumed by registration)
         otp_obj.is_verified = True
         otp_obj.verified_at = timezone.now()
         otp_obj.save(update_fields=["is_verified", "verified_at", "updated_at"])
 
-        # Create the user using existing RegisterSerializer logic.
+        return Response(
+            {"detail": "OTP verified successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class RegisterCompleteView(APIView):
+    """
+    Stage 3: create the user with a password.
+    Requires that the OTP has already been verified (or verifies it again here).
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = RegisterCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        otp = serializer.validated_data["otp"]
+        password = serializer.validated_data["password"]
+
+        User = get_user_model()
+        if User.objects.filter(email=email).exists():
+            return Response(
+                {"detail": "A user with this email already exists."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Look for a verified OTP that matches
+        otp_obj = (
+            RegistrationOTP.objects.filter(email=email, is_verified=True, otp_code=otp)
+            .order_by("-verified_at")
+            .first()
+        )
+
+        if not otp_obj:
+            # Fallback: check if it's currently unverified but valid (for backward compatibility if someone skips verify-otp step)
+            otp_obj = (
+                RegistrationOTP.objects.filter(email=email, is_verified=False, otp_code=otp)
+                .order_by("-created_at")
+                .first()
+            )
+            
+            if not otp_obj:
+                return Response(
+                    {"detail": "Verification code is invalid or has not been verified."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            
+            if otp_obj.is_expired:
+                 return Response(
+                    {"detail": "Verification code has expired."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            
+            # If valid but not verified, mark it now
+            otp_obj.is_verified = True
+            otp_obj.verified_at = timezone.now()
+            otp_obj.save(update_fields=["is_verified", "verified_at", "updated_at"])
+
+        # Create the user
         role = otp_obj.role or UserProfile.ROLE_CUSTOMER
         username = email.split("@")[0] or email
         register_serializer = RegisterSerializer(
