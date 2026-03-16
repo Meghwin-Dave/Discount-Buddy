@@ -601,6 +601,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
     reviews_count = serializers.SerializerMethodField()
     is_open_now = serializers.SerializerMethodField()
     is_favourite = serializers.SerializerMethodField()
+    has_user_reviewed = serializers.SerializerMethodField()
     distance = serializers.SerializerMethodField()
     distance_miles = serializers.SerializerMethodField()
     
@@ -612,7 +613,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "categories", "cuisines", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
-            "is_favourite", "distance", "distance_miles", "created_at"
+            "is_favourite", "has_user_reviewed", "distance", "distance_miles", "created_at"
         )
         
     def get_reviews(self, obj):
@@ -646,6 +647,12 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request and request.user.is_authenticated:
             return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
+        return False
+        
+    def get_has_user_reviewed(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return obj.reviews.filter(user=request.user).exists()
         return False
     
     def get_distance(self, obj):
