@@ -29,6 +29,7 @@ from .models import (
     MysteryVisit,
     MysteryScore,
     MysteryEvidence,
+    Facility,
 )
 from .serializers import (
     CountrySerializer,
@@ -58,6 +59,7 @@ from .serializers import (
     MysteryVisitSerializer,
     MysteryVisitSubmitSerializer,
     MysteryEvidenceSerializer,
+    FacilitySerializer,
 )
 from .services import redeem_deal, calculate_distance, km_to_miles
 from users.permissions import (
@@ -124,6 +126,17 @@ class CuisineListView(generics.ListAPIView):
     ordering = ["name"]
 
 
+class FacilityListView(generics.ListAPIView):
+    """List all restaurant facilities"""
+    queryset = Facility.objects.filter(is_active=True)
+    serializer_class = FacilitySerializer
+    permission_classes = [AllowAny]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name"]
+    ordering_fields = ["name"]
+    ordering = ["name"]
+
+
 class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet for restaurants"""
     permission_classes = [AllowAny]
@@ -164,18 +177,19 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         # Nearby restaurants (requires lat/long)
         lat = self.request.query_params.get("latitude")
         lon = self.request.query_params.get("longitude")
-        radius = self.request.query_params.get("radius", 10)  # default 10km
+        # Enforce maximum 100 miles radius
+        radius_miles = min(float(self.request.query_params.get("radius", 100)), 100.0)
+        radius_km = radius_miles * 1.60934
         
         if lat and lon:
             try:
                 lat = float(lat)
                 lon = float(lon)
-                radius = float(radius)
                 
                 # Filter restaurants within approximate radius
                 # Simple bounding box filter (not perfect but fast)
-                lat_delta = radius / 111.0  # roughly 1 degree = 111km
-                lon_delta = radius / (111.0 * abs(math.cos(math.radians(lat))))
+                lat_delta = radius_km / 111.0  # roughly 1 degree = 111km
+                lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
                 
                 queryset = queryset.filter(
                     latitude__gte=lat - lat_delta,
@@ -227,11 +241,11 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         Query params:
         - latitude (required)
         - longitude (required)
-        - radius (optional, miles; default 10)
+        - radius (optional, miles; default 100, max 100)
         """
         lat = request.query_params.get("latitude")
         lon = request.query_params.get("longitude")
-        radius_miles = float(request.query_params.get("radius", 10))
+        radius_miles = min(float(request.query_params.get("radius", 100)), 100.0)
         
         if not lat or not lon:
             return Response(
@@ -264,7 +278,7 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
             longitude__lte=lon + lon_delta,
             latitude__isnull=False,
             longitude__isnull=False
-        ).select_related("city", "city__country").prefetch_related("images")
+        ).select_related("city", "city__country").prefetch_related("images", "facilities")
         
         # Calculate actual distances and sort
         restaurants_with_distance = []
@@ -564,7 +578,7 @@ class HomeScreenView(generics.GenericAPIView):
         latitude = params.get("latitude") or params.get("lat")
         longitude = params.get("longitude") or params.get("lon")
         now_open = params.get("now_open", "false").lower() == "true"
-        radius_miles = float(params.get("radius", 10))  # default 10 miles
+        radius_miles = min(float(params.get("radius", 100)), 100.0) # default 100 miles, max 100
         radius_km = radius_miles * 1.60934
         
         # Base queryset
@@ -572,7 +586,7 @@ class HomeScreenView(generics.GenericAPIView):
             is_active=True,
             verified=True
         ).select_related("city", "city__country").prefetch_related(
-            "categories", "cuisines", "images"
+            "categories", "cuisines", "images", "facilities"
         ).annotate(
             average_rating=Avg("reviews__rating"),
             reviews_count=Count("reviews", distinct=True),
@@ -586,6 +600,27 @@ class HomeScreenView(generics.GenericAPIView):
                 distinct=True
             )
         )
+        
+        # If coordinates provided, ALWAYS enforce the 100-mile limit globally for this view
+        if latitude and longitude:
+            try:
+                lat = float(latitude)
+                lon = float(longitude)
+                
+                # Bounding box filter (initial coarse filtering)
+                lat_delta = radius_km / 111.0
+                lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
+                
+                queryset = queryset.filter(
+                    latitude__gte=lat - lat_delta,
+                    latitude__lte=lat + lat_delta,
+                    longitude__gte=lon - lon_delta,
+                    longitude__lte=lon + lon_delta,
+                    latitude__isnull=False,
+                    longitude__isnull=False
+                )
+            except (ValueError, TypeError):
+                pass
         
         # Filter by city
         if city_id:
@@ -608,40 +643,40 @@ class HomeScreenView(generics.GenericAPIView):
         if cuisine_id:
             queryset = queryset.filter(cuisines__id=cuisine_id)
         
-        # Nearby filter (requires lat/lng)
-        nearby_restaurants = None
+        # Trending Near You - limited to 10 miles
+        nearby_restaurants = []
         if latitude and longitude:
             try:
                 lat = float(latitude)
                 lon = float(longitude)
+                trending_radius_miles = 10.0
+                trending_radius_km = trending_radius_miles * 1.60934
                 
-                # Bounding box filter
-                lat_delta = radius_km / 111.0
-                lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
+                # Bounding box filter for trending
+                trend_lat_delta = trending_radius_km / 111.0
+                trend_lon_delta = trending_radius_km / (111.0 * abs(math.cos(math.radians(lat))))
                 
                 nearby_qs = queryset.filter(
-                    latitude__gte=lat - lat_delta,
-                    latitude__lte=lat + lat_delta,
-                    longitude__gte=lon - lon_delta,
-                    longitude__lte=lon + lon_delta,
-                    latitude__isnull=False,
-                    longitude__isnull=False
+                    latitude__gte=lat - trend_lat_delta,
+                    latitude__lte=lat + trend_lat_delta,
+                    longitude__gte=lon - trend_lon_delta,
+                    longitude__lte=lon + trend_lon_delta
                 )
                 
-                # Calculate distances and sort
+                # Calculate distances and filter by exact radius
                 restaurants_with_distance = []
                 for restaurant in nearby_qs:
-                    if restaurant.latitude and restaurant.longitude:
-                        dist_km = calculate_distance(
-                            lat, lon,
-                            float(restaurant.latitude),
-                            float(restaurant.longitude)
-                        )
-                        if dist_km and dist_km <= radius_km:
-                            dist_miles = km_to_miles(dist_km)
-                            restaurant._distance_miles = dist_miles
-                            restaurants_with_distance.append((restaurant, dist_miles))
+                    dist_km = calculate_distance(
+                        lat, lon,
+                        float(restaurant.latitude),
+                        float(restaurant.longitude)
+                    )
+                    if dist_km and dist_km <= trending_radius_km:
+                        dist_miles = km_to_miles(dist_km)
+                        restaurant._distance_miles = dist_miles
+                        restaurants_with_distance.append((restaurant, dist_miles))
                 
+                # Sort by distance for nearby
                 restaurants_with_distance.sort(key=lambda x: x[1])
                 nearby_restaurants = [r[0] for r in restaurants_with_distance]
             except (ValueError, TypeError):
@@ -755,7 +790,7 @@ class RestaurantDetailViewSet(viewsets.ReadOnlyModelViewSet):
             verified=True
         ).select_related("city", "city__country").prefetch_related(
             "categories", "cuisines", "images", "reviews__user",
-            "menu_categories__items", "opening_slots", "deals"
+            "menu_categories__items", "opening_slots", "deals", "facilities"
         )
     
     def retrieve(self, request, *args, **kwargs):

@@ -20,6 +20,7 @@ from .models import (
     MysteryVisit,
     MysteryScore,
     MysteryEvidence,
+    Facility,
 )
 from wallet.models import Wallet, WalletTransaction
 
@@ -42,6 +43,14 @@ class CityAdmin(admin.ModelAdmin):
 class RestaurantCategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "slug", "icon", "created_at")
     search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(Facility)
+class FacilityAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "icon", "is_active", "created_at")
+    search_fields = ("name", "slug")
+    list_filter = ("is_active", "created_at")
     prepopulated_fields = {"slug": ("name",)}
 
 
@@ -68,7 +77,7 @@ class RestaurantAdmin(admin.ModelAdmin):
     list_filter = ("verified", "is_featured", "city__country", "city", "created_at")
     search_fields = ("name", "address", "city__name", "description")
     raw_id_fields = ("merchant", "city")
-    filter_horizontal = ("categories", "cuisines")
+    filter_horizontal = ("categories", "cuisines", "facilities")
     inlines = [RestaurantImageInline]
     prepopulated_fields = {"slug": ("name",)}
     fieldsets = (
@@ -86,6 +95,8 @@ class RestaurantAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "categories",
+                    "cuisines",
+                    "facilities",
                     "price_range",
                     "occupancy",
                     "opening_hours",

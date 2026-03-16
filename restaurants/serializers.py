@@ -21,6 +21,7 @@ from .models import (
     MysteryVisit,
     MysteryScore,
     MysteryEvidence,
+    Facility,
 )
 
 
@@ -74,12 +75,18 @@ class RestaurantCategorySerializer(serializers.ModelSerializer):
         return obj.restaurants.filter(is_active=True, verified=True).count()
 
 
+class FacilitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Facility
+        fields = ("id", "name", "slug", "icon", "is_active")
+
+
 class RestaurantImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     
     class Meta:
         model = RestaurantImage
-        fields = ("id", "image", "image_url", "alt_text", "is_primary", "order")
+        fields = ("id", "image", "image_url", "alt_text", "image_type", "is_primary", "order")
         
     def get_image_url(self, obj):
         if obj.image:
@@ -109,16 +116,17 @@ class RestaurantSerializer(serializers.ModelSerializer):
         help_text="List of category IDs"
     )
     images = RestaurantImageSerializer(many=True, read_only=True)
+    facilities = FacilitySerializer(many=True, read_only=True)
     active_deals_count = serializers.IntegerField(read_only=True)
     is_saved = serializers.SerializerMethodField()
     
     class Meta:
         model = Restaurant
         fields = (
-            "id", "name", "slug", "description", "city_id", "city", "address", "postcode",
+            "id", "name", "slug", "description", "city", "city_id", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
             "price_range", "occupancy", "verified", "is_featured", "opening_hours",
-            "images", "active_deals_count", "is_saved", "created_at"
+            "menu_type", "images", "active_deals_count", "is_saved", "facilities", "created_at"
         )
         read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "images")
         
@@ -193,7 +201,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
-            "active_deals_count", "leaderboard_score", "distance_miles"
+            "active_deals_count", "leaderboard_score", "distance_miles", "facilities"
         )
         
     def get_primary_image(self, obj):
@@ -596,6 +604,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
     reviews = serializers.SerializerMethodField()
     menu_categories = serializers.SerializerMethodField()
     opening_slots = OpeningSlotSerializer(many=True, read_only=True)
+    facilities = FacilitySerializer(many=True, read_only=True)
     active_deals = serializers.SerializerMethodField()
     average_rating = serializers.SerializerMethodField()
     reviews_count = serializers.SerializerMethodField()
@@ -610,7 +619,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "city", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website",
-            "categories", "cuisines", "price_range", "occupancy", "verified", "is_featured",
+            "categories", "cuisines", "facilities", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
             "is_favourite", "has_user_reviewed", "distance", "distance_miles", "created_at"

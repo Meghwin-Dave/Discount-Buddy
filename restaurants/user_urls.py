@@ -16,6 +16,7 @@ from .views import (
     BookingViewSet,
     ProfileStatsView,
     MysteryVisitViewSet,
+    FacilityListView,
 )
 
 router = DefaultRouter(trailing_slash=False)
@@ -35,6 +36,7 @@ urlpatterns = [
     path("cities", CityListView.as_view(), name="city-list"),
     path("categories", RestaurantCategoryListView.as_view(), name="restaurant-category-list"),
     path("cuisines", CuisineListView.as_view(), name="cuisine-list"),
+    path("facilities", FacilityListView.as_view(), name="facility-list"),
     # Mobile app endpoints
     path("home", HomeScreenView.as_view(), name="home-screen"),
     path("profile/stats", ProfileStatsView.as_view(), name="profile-stats"),

@@ -56,6 +56,21 @@ class RestaurantCategory(TimeStampedModel):
         return self.name
 
 
+class Facility(TimeStampedModel):
+    """Restaurant facility (e.g., WiFi, Parking, Outdoor Seating)"""
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=120, unique=True)
+    icon = models.CharField(max_length=50, blank=True, help_text="Icon name (e.g., wifi, local_parking)")
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        verbose_name_plural = "Facilities"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Restaurant(TimeStampedModel, SoftDeleteModel):
     """Restaurant model"""
     merchant = models.ForeignKey(
@@ -84,6 +99,7 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
     # Details
     categories = models.ManyToManyField(RestaurantCategory, related_name="restaurants", blank=True)
     cuisines = models.ManyToManyField("Cuisine", related_name="restaurants", blank=True)
+    facilities = models.ManyToManyField(Facility, related_name="restaurants", blank=True)
     price_range = models.PositiveIntegerField(
         default=2,
         validators=[MinValueValidator(1), MaxValueValidator(4)],
@@ -110,6 +126,20 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
     verified = models.BooleanField(default=False, db_index=True)
     is_featured = models.BooleanField(default=False, db_index=True)
     
+    # Menu configuration
+    MENU_TYPE_STRUCTURED = "structured"
+    MENU_TYPE_IMAGE = "image"
+    MENU_TYPE_CHOICES = [
+        (MENU_TYPE_STRUCTURED, "Structured Menu"),
+        (MENU_TYPE_IMAGE, "Image Menu"),
+    ]
+    menu_type = models.CharField(
+        max_length=20,
+        choices=MENU_TYPE_CHOICES,
+        default=MENU_TYPE_STRUCTURED,
+        help_text="Whether to show structured menu items or uploaded menu images.",
+    )
+
     # Hours (simple JSON field - can be extended later)
     opening_hours = models.JSONField(default=dict, blank=True)
 
@@ -322,6 +352,20 @@ class RestaurantImage(TimeStampedModel):
     )
     image = models.ImageField(upload_to="restaurants/%Y/%m/%d/")
     alt_text = models.CharField(max_length=255, blank=True)
+    
+    # Image types
+    TYPE_GALLERY = "gallery"
+    TYPE_MENU = "menu"
+    TYPE_CHOICES = [
+        (TYPE_GALLERY, "Gallery"),
+        (TYPE_MENU, "Menu Image"),
+    ]
+    image_type = models.CharField(
+        max_length=20,
+        choices=TYPE_CHOICES,
+        default=TYPE_GALLERY
+    )
+    
     is_primary = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
     
