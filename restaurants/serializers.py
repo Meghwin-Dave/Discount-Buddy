@@ -521,7 +521,9 @@ class BookingCreateSerializer(serializers.ModelSerializer):
 class BookingManagementSerializer(BookingSerializer):
     """Serializer for merchants to manage bookings (allows status update)"""
     
-    class Meta(BookingSerializer.Meta):
+    class Meta:
+        model = Booking
+        fields = BookingSerializer.Meta.fields
         read_only_fields = ("user",)  # Remove 'status' from read_only so it can be updated
 
 

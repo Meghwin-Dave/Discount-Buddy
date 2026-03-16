@@ -15,7 +15,7 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "change-me-in-production")
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
 # ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOmake documentatSTS", "*").split(",")
-ALLOWED_HOSTS = ["192.168.29.221","16.171.196.144","127.0.0.1", "localhost", "ec2-16-171-196-144.eu-north-1.compute.amazonaws.com"]
+ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
