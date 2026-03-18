@@ -8,6 +8,7 @@ from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from decimal import Decimal
 from .models import Deal, DealUse, Restaurant
 from users.models import User
 
@@ -139,6 +140,7 @@ def redeem_deal(
     qr_data: str | None = None,
     price: float | None = None,
     people_count: int | None = None,
+    restaurant_id: int | None = None,
 ) -> RedemptionResult:
     """
     Redeem a deal either by 6-digit code or by QR payload.
@@ -148,6 +150,7 @@ def redeem_deal(
     - not already redeemed
     - deal is still active
     - actor owns the restaurant for which the deal applies
+    - (Optional) restaurant_id matches the deal's restaurant
     """
     if not redemption_code and not qr_data:
         return RedemptionResult(False, "Either redemption_code or qr_data is required.")
@@ -187,6 +190,10 @@ def redeem_deal(
     # Verify that the actor is allowed to redeem for this restaurant.
     restaurant: Restaurant = deal.restaurant
 
+    # Validate restaurant_id if provided
+    if restaurant_id and restaurant.id != int(restaurant_id):
+        return RedemptionResult(False, f"This deal belongs to '{restaurant.name}' and cannot be redeemed at the selected restaurant.", deal_use)
+
     # The actor can be either:
     # - a user linked via RestaurantProfile
     # - a merchant user owning the restaurant via vouchers.Merchant
@@ -206,11 +213,39 @@ def redeem_deal(
     deal_use.restaurant_confirmed = True
     
     if price is not None:
-        deal_use.price = price
+        price_dec = Decimal(str(price))
+        deal_use.price = price_dec
+        
+        # Calculate discount breakdown
+        discount_amount_saved = Decimal("0.00")
+        final_bill_amount = price_dec
+        
+        if deal.deal_type == Deal.DEAL_TYPE_PERCENTAGE:
+            if deal.discount_percentage:
+                discount_amount_saved = price_dec * (Decimal(str(deal.discount_percentage)) / Decimal("100"))
+                final_bill_amount = price_dec - discount_amount_saved
+        elif deal.deal_type == Deal.DEAL_TYPE_FIXED:
+            if deal.discount_amount:
+                discount_amount_saved = min(price_dec, Decimal(str(deal.discount_amount)))
+                final_bill_amount = price_dec - discount_amount_saved
+        elif deal.deal_type == Deal.DEAL_TYPE_TWO_FOR_ONE:
+            # Assume 50% discount if 2 or more people
+            p_count = people_count or deal_use.people_count or 1
+            if p_count >= 2:
+                discount_amount_saved = price_dec / Decimal("2")
+                final_bill_amount = price_dec - discount_amount_saved
+        
+        deal_use.discount_amount_saved = discount_amount_saved
+        deal_use.final_bill_amount = final_bill_amount
+
     if people_count is not None:
         deal_use.people_count = people_count
         
-    deal_use.save(update_fields=["is_redeemed", "redeemed_at", "redeemed_by", "restaurant_confirmed", "price", "people_count", "updated_at"])
+    deal_use.save(update_fields=[
+        "is_redeemed", "redeemed_at", "redeemed_by", 
+        "restaurant_confirmed", "price", "people_count", 
+        "discount_amount_saved", "final_bill_amount", "updated_at"
+    ])
 
     return RedemptionResult(True, "Deal redeemed successfully.", deal_use)
 

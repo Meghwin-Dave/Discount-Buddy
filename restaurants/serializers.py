@@ -119,6 +119,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
     facilities = FacilitySerializer(many=True, read_only=True)
     active_deals_count = serializers.IntegerField(read_only=True)
     is_saved = serializers.SerializerMethodField()
+    is_favourite = serializers.SerializerMethodField()
     
     class Meta:
         model = Restaurant
@@ -126,7 +127,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "description", "city", "city_id", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
             "price_range", "occupancy", "verified", "is_featured", "opening_hours",
-            "menu_type", "images", "active_deals_count", "is_saved", "facilities", "created_at"
+            "menu_type", "images", "active_deals_count", "is_saved", "is_favourite", "facilities", "created_at"
         )
         read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "images")
         
@@ -135,6 +136,13 @@ class RestaurantSerializer(serializers.ModelSerializer):
         if request and request.user.is_authenticated:
             return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
         return False
+    
+    def get_is_favourite(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
+        return False
+
     
     def create(self, validated_data):
         # Auto-generate slug from name if not provided
@@ -194,6 +202,9 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     active_deals_count = serializers.IntegerField(read_only=True)
     leaderboard_score = serializers.SerializerMethodField()
     distance_miles = serializers.SerializerMethodField()
+    is_favourite = serializers.SerializerMethodField()
+    active_deals = serializers.SerializerMethodField()
+
     
     class Meta:
         model = Restaurant
@@ -201,8 +212,15 @@ class RestaurantListSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
-            "active_deals_count", "leaderboard_score", "distance_miles", "facilities"
+            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "is_favourite", "active_deals"
         )
+
+        
+    def get_is_favourite(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
+        return False
         
     def get_primary_image(self, obj):
         primary_img = obj.images.filter(is_primary=True).first()
@@ -228,6 +246,17 @@ class RestaurantListSerializer(serializers.ModelSerializer):
                 value = km_to_miles(dist_km)
                 
         return round(value, 2) if isinstance(value, (int, float)) else None
+
+    def get_active_deals(self, obj):
+        from django.utils import timezone
+        now = timezone.now()
+        active_deals = obj.deals.filter(
+            is_active=True,
+            start_date__lte=now,
+            end_date__gte=now
+        )
+        return DealListSerializer(active_deals, many=True, context=self.context).data
+
 
 
 class DealImageSerializer(serializers.ModelSerializer):
@@ -292,7 +321,8 @@ class DealListSerializer(serializers.ModelSerializer):
         fields = (
             "id", "title", "description", "deal_type", "restaurant_name",
             "restaurant_slug", "city_name", "discount_percentage",
-            "discount_amount", "minimum_spend", "start_date", "end_date",
+            "discount_amount", "minimum_spend", "terms_and_conditions",
+            "start_date", "end_date", "max_per_user",
             "is_featured", "primary_image", "is_active", "created_at"
         )
         
@@ -346,6 +376,8 @@ class DealUseSerializer(serializers.ModelSerializer):
             "redeemed_at",
             "price",
             "people_count",
+            "discount_amount_saved",
+            "final_bill_amount",
             "created_at",
         )
         read_only_fields = (
@@ -470,12 +502,14 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
 class BookingSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     restaurant_slug = serializers.CharField(source="restaurant.slug", read_only=True)
+    restaurant_city_name = serializers.SerializerMethodField()
     can_cancel = serializers.SerializerMethodField()
+
     
     class Meta:
         model = Booking
         fields = (
-            "id", "restaurant", "restaurant_name", "restaurant_slug",
+            "id", "restaurant", "restaurant_name", "restaurant_slug", "restaurant_city_name",
             "booking_date", "number_of_guests", "status",
             "special_requests", "contact_phone", "contact_name",
             "can_cancel", "created_at"
@@ -484,6 +518,10 @@ class BookingSerializer(serializers.ModelSerializer):
         
     def get_can_cancel(self, obj):
         return obj.can_cancel()
+    
+    def get_restaurant_city_name(self, obj):
+        return obj.restaurant.city.name if obj.restaurant and obj.restaurant.city else None
+
     
     def validate_number_of_guests(self, value):
         if value < 1:
@@ -624,7 +662,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "categories", "cuisines", "facilities", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
-            "is_favourite", "has_user_reviewed", "distance", "distance_miles", "created_at"
+            "is_favourite", "has_user_reviewed", "distance", "distance_miles", "menu_type", "created_at"
         )
         
     def get_reviews(self, obj):
@@ -801,6 +839,7 @@ class DealRedemptionRequestSerializer(serializers.Serializer):
     qr_data = serializers.CharField(required=False)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, required=True)
     people_count = serializers.IntegerField(min_value=1, required=True)
+    restaurant_id = serializers.IntegerField(required=False)
 
     def validate(self, attrs):
         redemption_code = attrs.get("redemption_code")

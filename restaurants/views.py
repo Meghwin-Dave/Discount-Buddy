@@ -1,5 +1,5 @@
 import math
-from django.db.models import Q, Count, F
+from django.db.models import Q, Count, F, Avg
 from django.utils import timezone
 from django.core.cache import cache
 from rest_framework import generics, viewsets, status, filters
@@ -8,8 +8,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from .serializers import RestaurantImageSerializer
-
+from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
+from users.models import UserProfile
+from vouchers.models import Merchant
 from .filters import RestaurantFilter, DealFilter
 from .models import (
     Country,
@@ -31,6 +32,7 @@ from .models import (
     MysteryScore,
     MysteryEvidence,
     Facility,
+    RestaurantImage,
 )
 from .serializers import (
     CountrySerializer,
@@ -57,6 +59,7 @@ from .serializers import (
     OpeningSlotSerializer,
     RestaurantDetailSerializer,
     RestaurantProfileSerializer,
+    RestaurantImageSerializer,
     MysteryVisitSerializer,
     MysteryVisitSubmitSerializer,
     MysteryEvidenceSerializer,
@@ -71,6 +74,24 @@ from users.permissions import (
     IsMysteryGuest,
 )
 
+def get_merchant_restaurants_queryset(user):
+
+
+    """
+    Returns a queryset of restaurants that the user is authorized to manage,
+    either as an owner profile or via a merchant account.
+    """
+    from vouchers.models import Merchant
+    from django.db.models import Q
+    
+    merchant, _ = Merchant.objects.get_or_create(
+        user=user,
+        defaults={'name': user.username or user.email}
+    )
+    
+    return Restaurant.objects.filter(
+        Q(merchant=merchant) | Q(owner_profile__user=user)
+    ).distinct()
 
 
 
@@ -456,17 +477,11 @@ class MerchantRestaurantViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
     
     def get_merchant(self):
-        """Get or create Merchant instance for the current user"""
-        from vouchers.models import Merchant
-        from users.models import UserProfile
-        
         # Check if user has merchant role
         try:
             if self.request.user.profile.role != UserProfile.ROLE_MERCHANT:
-                from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied("User is not a merchant.")
         except UserProfile.DoesNotExist:
-            from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("User profile not found.")
         
         # Get or create Merchant instance
@@ -478,10 +493,9 @@ class MerchantRestaurantViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Get merchant's restaurants
-        merchant = self.get_merchant()
-        return Restaurant.objects.filter(
-            merchant=merchant
-        ).select_related("city", "city__country").prefetch_related(
+        return get_merchant_restaurants_queryset(self.request.user).select_related(
+            "city", "city__country"
+        ).prefetch_related(
             "categories", "images"
         ).annotate(
             active_deals_count=Count(
@@ -494,6 +508,7 @@ class MerchantRestaurantViewSet(viewsets.ModelViewSet):
                 distinct=True
             )
         )
+
     
     def perform_create(self, serializer):
         merchant = self.get_merchant()
@@ -511,17 +526,11 @@ class MerchantDealViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
     
     def get_merchant(self):
-        """Get or create Merchant instance for the current user"""
-        from vouchers.models import Merchant
-        from users.models import UserProfile
-        
         # Check if user has merchant role
         try:
             if self.request.user.profile.role != UserProfile.ROLE_MERCHANT:
-                from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied("User is not a merchant.")
         except UserProfile.DoesNotExist:
-            from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("User profile not found.")
         
         # Get or create Merchant instance
@@ -533,10 +542,11 @@ class MerchantDealViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Get deals for merchant's restaurants
-        merchant = self.get_merchant()
+        restaurant_qs = get_merchant_restaurants_queryset(self.request.user)
         return Deal.objects.filter(
-            restaurant__merchant=merchant
+            restaurant__in=restaurant_qs
         ).select_related("restaurant").prefetch_related("images")
+
     
     def perform_create(self, serializer):
         restaurant_id = self.request.data.get("restaurant")
@@ -546,10 +556,28 @@ class MerchantDealViewSet(viewsets.ModelViewSet):
         try:
             restaurant = Restaurant.objects.get(id=restaurant_id, merchant=merchant)
         except Restaurant.DoesNotExist:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError("Restaurant not found or does not belong to you")
         
         serializer.save(restaurant=restaurant)
+
+    @action(detail=True, methods=["post"])
+    def toggle_status(self, request, pk=None):
+        """Toggle the is_active status of a deal."""
+        deal = self.get_object()
+        deal.is_active = not deal.is_active
+        deal.save(update_fields=["is_active", "updated_at"])
+        
+        # Invalidate active deals cache
+        from django.core.cache import cache
+        from django.utils import timezone
+        cache.delete(f"active_deals_{timezone.now().date()}")
+        
+        return Response({
+            "success": True, 
+            "is_active": deal.is_active,
+            "detail": f"Deal {'activated' if deal.is_active else 'deactivated'} successfully."
+        })
+
 
 
 # ==================== MOBILE APP VIEWS ====================
@@ -569,7 +597,6 @@ class HomeScreenView(generics.GenericAPIView):
         - Top 10 in City
         - All Restaurants (Card Format)
         """
-        from django.db.models import Avg, Count
         
         # Get query parameters
         params = request.query_params
@@ -930,9 +957,10 @@ class ProfileStatsView(generics.GenericAPIView):
         # Money saved (sum of discount amounts from used deals)
         from django.db.models import Sum
         money_saved = DealUse.objects.filter(
-            user=user
+            user=user,
+            is_redeemed=True
         ).aggregate(
-            total_saved=Sum("deal__discount_amount")
+            total_saved=Sum("discount_amount_saved")
         )["total_saved"] or 0
         
         # Restaurants visited (unique restaurants from bookings and deal uses)
@@ -990,19 +1018,9 @@ class RestaurantManagementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsRestaurant]
     
     def get_queryset(self):
-        # Get restaurants owned by the user
-        user = self.request.user
-        try:
-            if hasattr(user, 'restaurant_profile'):
-                return Restaurant.objects.filter(
-                    owner_profile__user=user
-                )
-            # Fallback to merchant
-            if hasattr(user, 'merchant'):
-                return Restaurant.objects.filter(merchant=user.merchant)
-        except:
-            pass
-        return Restaurant.objects.none()
+        # Get restaurants owned or managed by the user
+        return get_merchant_restaurants_queryset(self.request.user)
+
     
     def get_permissions(self):
         if self.action in ["list", "retrieve"]:
@@ -1055,19 +1073,16 @@ class MenuManagementViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Get menu categories for user's restaurants
-        user = self.request.user
-        restaurant_ids = []
-        try:
-            if hasattr(user, 'restaurant_profile'):
-                restaurant_ids = [user.restaurant_profile.restaurant_id]
-            elif hasattr(user, 'merchant'):
-                restaurant_ids = list(
-                    Restaurant.objects.filter(merchant=user.merchant).values_list("id", flat=True)
-                )
-        except:
-            pass
+        restaurant_qs = get_merchant_restaurants_queryset(self.request.user)
+        queryset = MenuCategory.objects.filter(restaurant__in=restaurant_qs)
+
         
-        return MenuCategory.objects.filter(restaurant_id__in=restaurant_ids)
+        # Filter by specific restaurant if provided
+        restaurant_id = self.request.query_params.get('restaurant') or self.request.query_params.get('restaurant_id')
+        if restaurant_id and restaurant_id != 'all':
+            queryset = queryset.filter(restaurant_id=restaurant_id)
+            
+        return queryset
     
     def perform_create(self, serializer):
         # Ensure restaurant belongs to user
@@ -1137,13 +1152,21 @@ class RestaurantReviewsManagementView(generics.ListAPIView):
             if hasattr(user, 'restaurant_profile'):
                 restaurant_ids = [user.restaurant_profile.restaurant_id]
             elif hasattr(user, 'merchant'):
+                merchant = Merchant.objects.get(user=user)
                 restaurant_ids = list(
-                    Restaurant.objects.filter(merchant=user.merchant).values_list("id", flat=True)
+                    Restaurant.objects.filter(merchant=merchant).values_list("id", flat=True)
                 )
         except:
             pass
         
-        return Review.objects.filter(restaurant_id__in=restaurant_ids).select_related("user")
+        queryset = Review.objects.filter(restaurant_id__in=restaurant_ids).select_related("user")
+        
+        # Filter by specific restaurant if provided
+        restaurant_id = self.request.query_params.get('restaurant_id')
+        if restaurant_id and restaurant_id != 'all':
+            queryset = queryset.filter(restaurant_id=restaurant_id)
+            
+        return queryset
 
 
 class RestaurantBookingsManagementViewSet(viewsets.ModelViewSet):
@@ -1168,15 +1191,23 @@ class RestaurantBookingsManagementViewSet(viewsets.ModelViewSet):
             if hasattr(user, 'restaurant_profile'):
                 restaurant_ids = [user.restaurant_profile.restaurant_id]
             elif hasattr(user, 'merchant'):
+                merchant = Merchant.objects.get(user=user)
                 restaurant_ids = list(
-                    Restaurant.objects.filter(merchant=user.merchant).values_list("id", flat=True)
+                    Restaurant.objects.filter(merchant=merchant).values_list("id", flat=True)
                 )
         except:
             pass
         
-        return Booking.objects.filter(
+        queryset = Booking.objects.filter(
             restaurant_id__in=restaurant_ids
         ).select_related("user", "restaurant")
+        
+        # Filter by specific restaurant if provided
+        restaurant_id = self.request.query_params.get('restaurant_id')
+        if restaurant_id and restaurant_id != 'all':
+            queryset = queryset.filter(restaurant_id=restaurant_id)
+            
+        return queryset
 
 
 class DealRedemptionView(APIView):
@@ -1200,6 +1231,7 @@ class DealRedemptionView(APIView):
             qr_data=serializer.validated_data.get("qr_data"),
             price=serializer.validated_data.get("price"),
             people_count=serializer.validated_data.get("people_count"),
+            restaurant_id=serializer.validated_data.get("restaurant_id"),
         )
 
         if not result.success:
@@ -1228,19 +1260,16 @@ class MenuItemManagementViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Get menu items for user's restaurants
-        user = self.request.user
-        restaurant_ids = []
-        try:
-            if hasattr(user, 'restaurant_profile'):
-                restaurant_ids = [user.restaurant_profile.restaurant_id]
-            elif hasattr(user, 'merchant'):
-                restaurant_ids = list(
-                    Restaurant.objects.filter(merchant=user.merchant).values_list("id", flat=True)
-                )
-        except:
-            pass
+        restaurant_qs = get_merchant_restaurants_queryset(self.request.user)
+        queryset = MenuItem.objects.filter(category__restaurant__in=restaurant_qs)
+
         
-        return MenuItem.objects.filter(category__restaurant_id__in=restaurant_ids)
+        # Filter by specific restaurant if provided
+        restaurant_id = self.request.query_params.get('restaurant')
+        if restaurant_id and restaurant_id != 'all':
+            queryset = queryset.filter(category__restaurant_id=restaurant_id)
+            
+        return queryset
     
     def perform_create(self, serializer):
         # Ensure category belongs to a restaurant owned by user
@@ -1264,6 +1293,12 @@ class MenuItemManagementViewSet(viewsets.ModelViewSet):
                 if not is_owner:
                     from rest_framework.exceptions import PermissionDenied
                     raise PermissionDenied("You don't own the restaurant this category belongs to")
+                    
+                # Ensure name is unique within the restaurant
+                name = serializer.validated_data.get("name")
+                if MenuItem.objects.filter(category__restaurant=restaurant, name=name).exists():
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({"name": "An item with this name already exists in this restaurant."})
                     
                 serializer.save(category=category)
             except MenuCategory.DoesNotExist:
@@ -1443,49 +1478,161 @@ class MerchantDashboardView(APIView):
             defaults={'name': request.user.username or request.user.email}
         )
 
-        now = timezone.now()
-        thirty_days_ago = now - timedelta(days=30)
+        # Determine restaurants belonging to this merchant
+        restaurants_owned = get_merchant_restaurants_queryset(request.user)
+
         
-        # Total Bookings (simplified: all bookings for merchant's restaurants)
-        total_bookings = Booking.objects.filter(restaurant__merchant=merchant).count()
+        if not restaurants_owned.exists():
+            return Response({
+                "total_bookings": 0,
+                "active_deals": 0,
+                "average_rating": 0.0,
+                "total_views": 0,
+                "total_earnings": 0.0,
+                "total_redeemed": 0,
+                "primary_restaurant_id": None,
+                "primary_restaurant_occupancy": None,
+                "restaurants": [],
+            })
+
+        restaurant_id = request.query_params.get('restaurant_id')
+        
+        # Base filters
+        booking_filter = Q(restaurant__in=restaurants_owned)
+        deal_filter = Q(restaurant__in=restaurants_owned)
+        review_filter = Q(restaurant__in=restaurants_owned)
+        deal_use_filter = Q(deal__restaurant__in=restaurants_owned)
+        
+        if restaurant_id and restaurant_id != 'all':
+            try:
+                # Ensure restaurant belongs to merchant
+                restaurant = restaurants_owned.get(id=restaurant_id)
+                booking_filter = Q(restaurant=restaurant)
+                deal_filter = Q(restaurant=restaurant)
+                review_filter = Q(restaurant=restaurant)
+                deal_use_filter = Q(deal__restaurant=restaurant)
+            except Restaurant.DoesNotExist:
+                return Response({"error": "Restaurant not found or unauthorized."}, status=status.HTTP_404_NOT_FOUND)
+
+        now = timezone.now()
+        
+        # Total Bookings
+        total_bookings = Booking.objects.filter(booking_filter).count()
 
         # Active Deals
         active_deals = Deal.objects.filter(
-            restaurant__merchant=merchant,
+            deal_filter,
             is_active=True,
             start_date__lte=now,
             end_date__gte=now
         ).count()
 
         # Average Rating
-        reviews_agg = Review.objects.filter(restaurant__merchant=merchant).aggregate(avg_rating=Avg('rating'))
+        reviews_agg = Review.objects.filter(review_filter).aggregate(avg_rating=Avg('rating'))
         avg_rating = round(reviews_agg['avg_rating'] or 0.0, 1)
 
-        # Views (Mock stat for now, but placeholder for analytics)
-        # Using a semi-random but stable number based on booking count
-        mock_views = total_bookings * 42 + 150
+        # Total Views (Simplified lifetime views for now)
+        mock_views = total_bookings * 42 + 250
 
         # Total Earnings
         earnings_agg = DealUse.objects.filter(
-            deal__restaurant__merchant=merchant,
+            deal_use_filter,
             is_redeemed=True
         ).aggregate(total=Sum('price'))
         total_earnings = float(earnings_agg['total'] or 0.0)
 
+        # List of all restaurants for selector
+        restaurants = list(restaurants_owned.values('id', 'name'))
+
         # Primary restaurant (for occupancy toggle)
-        primary_restaurant = merchant.restaurants.first()
-        restaurant_id = primary_restaurant.id if primary_restaurant else None
+        primary_restaurant = None
+        if restaurant_id and restaurant_id != 'all':
+            try:
+                primary_restaurant = restaurants_owned.get(id=restaurant_id)
+            except Restaurant.DoesNotExist:
+                primary_restaurant = restaurants_owned.first()
+        else:
+            primary_restaurant = restaurants_owned.first()
+
+        p_restaurant_id = primary_restaurant.id if primary_restaurant else None
         occupancy = primary_restaurant.occupancy if primary_restaurant else None
 
         return Response({
             "total_bookings": total_bookings,
             "active_deals": active_deals,
             "average_rating": avg_rating,
-            "total_views_30d": mock_views,
+            "total_views": mock_views,
             "total_earnings": total_earnings,
-            "primary_restaurant_id": restaurant_id,
+            "total_redeemed": DealUse.objects.filter(deal_use_filter, is_redeemed=True).count(),
+            "primary_restaurant_id": p_restaurant_id,
             "primary_restaurant_occupancy": occupancy,
+            "primary_restaurant_address": primary_restaurant.address if primary_restaurant else None,
+            "restaurants": restaurants,
         })
+
+
+
+class RestaurantImageViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for merchants to manage restaurant images.
+    """
+    serializer_class = RestaurantImageSerializer
+    permission_classes = [IsMerchant]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["restaurant", "image_type"]
+    ordering_fields = ["order", "created_at"]
+    ordering = ["order", "-created_at"]
+
+    def get_queryset(self):
+        # Only show images for restaurants owned by this merchant
+        from vouchers.models import Merchant
+        try:
+            merchant = Merchant.objects.get(user=self.request.user)
+            return RestaurantImage.objects.filter(restaurant__merchant=merchant)
+        except Merchant.DoesNotExist:
+            return RestaurantImage.objects.none()
+
+    def perform_create(self, serializer):
+        # Verify the restaurant belongs to the merchant
+        from vouchers.models import Merchant
+        from rest_framework.exceptions import ValidationError
+        
+        restaurant_id = self.request.data.get("restaurant")
+        try:
+            merchant = Merchant.objects.get(user=self.request.user)
+            restaurant = Restaurant.objects.get(id=restaurant_id, merchant=merchant)
+        except (Merchant.DoesNotExist, Restaurant.DoesNotExist):
+            raise ValidationError("Restaurant not found or does not belong to you.")
+            
+        serializer.save(restaurant=restaurant)
+
+
+class MerchantRedemptionHistoryView(generics.ListAPIView):
+    """
+    Returns a list of successful redemptions for the logged-in merchant.
+    Can be filtered by restaurant_id.
+    """
+    serializer_class = DealUseSerializer
+    permission_classes = [IsMerchant]
+
+    def get_queryset(self):
+        from vouchers.models import Merchant
+        from users.models import UserProfile
+        
+        user = self.request.user
+        try:
+            merchant = Merchant.objects.get(user=user)
+        except (Merchant.DoesNotExist, UserProfile.DoesNotExist):
+            return DealUse.objects.none()
+
+        restaurant_id = self.request.query_params.get('restaurant_id')
+        
+        queryset = DealUse.objects.filter(deal__restaurant__merchant=merchant, is_redeemed=True).order_by('-redeemed_at')
+        
+        if restaurant_id and restaurant_id != 'all':
+            queryset = queryset.filter(deal__restaurant_id=restaurant_id)
+            
+        return queryset
 
 
 class UpdateOccupancyView(APIView):

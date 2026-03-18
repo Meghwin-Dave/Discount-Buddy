@@ -12,8 +12,10 @@ from .views import (
     RestaurantReviewsManagementView,
     RestaurantBookingsManagementViewSet,
     DealRedemptionView,
+    MerchantRedemptionHistoryView,
     MerchantDashboardView,
     UpdateOccupancyView,
+    RestaurantImageViewSet,
 )
 
 router = DefaultRouter(trailing_slash=False)
@@ -25,6 +27,7 @@ router.register(r"restaurant/manage", RestaurantManagementViewSet, basename="res
 router.register(r"restaurant/menu", MenuManagementViewSet, basename="menu-manage")
 router.register(r"restaurant/menu-items", MenuItemManagementViewSet, basename="menu-item-manage")
 router.register(r"restaurant/bookings", RestaurantBookingsManagementViewSet, basename="restaurant-bookings")
+router.register(r"restaurant-images", RestaurantImageViewSet, basename="restaurant-images")
 router.register(
     r"restaurant/opening-slots", OpeningSlotManagementViewSet, basename="opening-slot-manage"
 )
@@ -35,6 +38,7 @@ urlpatterns = [
     path("restaurant/reviews", RestaurantReviewsManagementView.as_view(), name="restaurant-reviews"),
     path("restaurant/occupancy", UpdateOccupancyView.as_view(), name="restaurant-occupancy"),
     path("deals/redeem", DealRedemptionView.as_view(), name="deal-redeem"),
+    path("deals/redemption-history", MerchantRedemptionHistoryView.as_view(), name="merchant-redemption-history"),
     # Router URLs
     path("", include(router.urls)),
 ]

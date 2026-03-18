@@ -473,6 +473,8 @@ class DealUse(TimeStampedModel):
     )
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     people_count = models.PositiveIntegerField(null=True, blank=True)
+    discount_amount_saved = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    final_bill_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     class Meta:
         indexes = [
