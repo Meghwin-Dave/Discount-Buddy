@@ -154,6 +154,10 @@ GOOGLE_OAUTH_ALLOWED_CLIENT_IDS = [
     ] if cid
 ]
 
+# Apple Sign In
+APPLE_OAUTH_CLIENT_ID = os.environ.get("APPLE_OAUTH_CLIENT_ID", "com.ketan.discountbuddy")
+APPLE_OAUTH_ALLOWED_CLIENT_IDS = [APPLE_OAUTH_CLIENT_ID]
+
 # Email configuration (for OTP and notifications)
 # Use Gmail App Password: https://myaccount.google.com/apppasswords
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"

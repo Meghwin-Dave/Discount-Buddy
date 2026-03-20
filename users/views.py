@@ -13,6 +13,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+import jwt
+import requests
+from jwt.algorithms import RSAAlgorithm
 
 from .models import UserProfile, RegistrationOTP
 from .serializers import (
@@ -239,47 +242,92 @@ class RefreshTokenView(TokenRefreshView):
     permission_classes = [permissions.AllowAny]
 
 
-class GoogleIdTokenLoginView(APIView):
+class SocialLoginView(APIView):
     """
-    Accept Google ID Token (from mobile or web client), verify it, and return JWT.
-    POST body: { "id_token": "<google_id_token>" } or { "credential": "<google_id_token>" }
+    Unified OAuth login view for Google and Apple.
+    POST body: { "provider": "google"/"apple", "token": "..." }
     """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
-        id_token_str = (
-            request.data.get("id_token")
+        provider = request.data.get("provider")
+        token_str = (
+            request.data.get("token")
+            or request.data.get("id_token")
             or request.data.get("credential")
-            or (request.data.get("token") if isinstance(request.data.get("token"), str) else None)
+            or request.data.get("identityToken")
         )
-        if not id_token_str:
+        
+        if not token_str:
             return Response(
-                {"detail": "id_token or credential is required."},
+                {"detail": "token, id_token, or credential is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        client_ids = getattr(settings, "GOOGLE_OAUTH_ALLOWED_CLIENT_IDS", [])
-        if not client_ids:
-            return Response(
-                {"detail": "Google OAuth is not configured."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-        try:
-            idinfo = id_token.verify_oauth2_token(
-                id_token_str,
-                google_requests.Request(),
-                client_ids,
-            )
-        except ValueError as e:
-            return Response(
-                {"detail": f"Invalid Google ID token: {e!s}"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-        email = idinfo.get("email")
+
+        # Autodetect provider if not explicitly sent, for backward compatibility
+        if not provider:
+            if request.data.get("identityToken") or request.data.get("token") and not (request.data.get("id_token") or request.data.get("credential")):
+                # This is a bit weak, but if token is passed and it's not and id_token/credential, 
+                # we might assume apple if provider is missing. 
+                # Better to require provider for the new endpoint.
+                pass
+
+        email = None
+        
+        if provider == "google" or not provider: # Default to google if provider missing for backward compatibility
+            client_ids = getattr(settings, "GOOGLE_OAUTH_ALLOWED_CLIENT_IDS", [])
+            if not client_ids:
+                return Response(
+                    {"detail": "Google OAuth is not configured."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            try:
+                idinfo = id_token.verify_oauth2_token(
+                    token_str,
+                    google_requests.Request(),
+                    client_ids,
+                )
+                email = idinfo.get("email")
+            except Exception as e:
+                if provider == "google":
+                    return Response(
+                        {"detail": f"Invalid Google token: {e!s}"},
+                        status=status.HTTP_401_UNAUTHORIZED,
+                    )
+                # If provider was auto-detected, we might try apple next? 
+                # No, let's keep it simple: required provider for new logic.
+        
+        if (provider == "apple") or (not email and not provider):
+            allowed_client_ids = getattr(settings, "APPLE_OAUTH_ALLOWED_CLIENT_IDS", ["com.ketan.discountbuddy"])
+            try:
+                response = requests.get("https://appleid.apple.com/auth/keys")
+                apple_keys = response.json().get("keys", [])
+                token_header = jwt.get_unverified_header(token_str)
+                kid = token_header.get("kid")
+                apple_key = next((k for k in apple_keys if k["kid"] == kid), None)
+                if apple_key:
+                    public_key = RSAAlgorithm.from_jwk(apple_key)
+                    decoded_token = jwt.decode(
+                        token_str,
+                        public_key,
+                        algorithms=["RS256"],
+                        audience=allowed_client_ids,
+                        issuer="https://appleid.apple.com",
+                    )
+                    email = decoded_token.get("email") or f"{decoded_token.get('sub')}@apple.com"
+            except Exception as e:
+                if provider == "apple":
+                    return Response(
+                        {"detail": f"Invalid Apple token: {e!s}"},
+                        status=status.HTTP_401_UNAUTHORIZED,
+                    )
+
         if not email:
             return Response(
-                {"detail": "Google token did not contain email."},
+                {"detail": "Authentication failed or unsupported provider."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
         user, created = User.objects.get_or_create(
             email=email,
             defaults={
@@ -294,11 +342,13 @@ class GoogleIdTokenLoginView(APIView):
                 user=user,
                 defaults={"role": UserProfile.ROLE_CUSTOMER},
             )
+        
         refresh = RefreshToken.for_user(user)
         try:
             role = user.profile.role
         except UserProfile.DoesNotExist:
             role = None
+
         return Response(
             {
                 "access": str(refresh.access_token),

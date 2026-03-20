@@ -8,7 +8,7 @@ from .views import (
     MeView,
     LoginView,
     RefreshTokenView,
-    GoogleIdTokenLoginView,
+    SocialLoginView,
     DeleteAccountInitView,
     DeleteAccountView,
 )
@@ -25,7 +25,7 @@ urlpatterns = [
     path("me", MeView.as_view(), name="me"),
     path("token", LoginView.as_view(), name="token_obtain_pair"),
     path("token/refresh", RefreshTokenView.as_view(), name="token_refresh"),
-    path("google", GoogleIdTokenLoginView.as_view(), name="google_id_token_login"),
+    path("oauth", SocialLoginView.as_view(), name="social_login"),
     path("account-delete/init", DeleteAccountInitView.as_view(), name="account-delete-init"),
     path("account-delete", DeleteAccountView.as_view(), name="account-delete"),
 ]
