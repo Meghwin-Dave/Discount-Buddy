@@ -458,4 +458,30 @@ class DeleteAccountView(APIView):
             status=status.HTTP_204_NO_CONTENT,
         )
 
+class LogoutView(APIView):
+    """
+    Logout view that blacklists the refresh token to end the session.
+    """
+    permission_classes = [permissions.IsAuthenticated]
 
+    def post(self, request, *args, **kwargs):
+        try:
+            refresh_token = request.data.get("refresh")
+            if not refresh_token:
+                return Response(
+                    {"detail": "refresh token is required."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+
+            return Response(
+                {"detail": "Successfully logged out."},
+                status=status.HTTP_200_OK,
+            )
+        except Exception:
+            return Response(
+                {"detail": "Invalid refresh token or token already blacklisted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
