@@ -171,15 +171,25 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     def get_serializer_class(self):
         if self.action == "list":
             return RestaurantListSerializer
-        return RestaurantSerializer
+        return RestaurantDetailSerializer
     
     def get_queryset(self):
         queryset = Restaurant.objects.filter(
             is_active=True,
             verified=True
-        ).select_related("city", "city__country").prefetch_related(
-            "categories", "images"
-        ).annotate(
+        ).select_related("city", "city__country")
+        
+        if self.action == "retrieve":
+            queryset = queryset.prefetch_related(
+                "categories", "cuisines", "images", "reviews__user", "reviews__user__profile",
+                "menu_categories__items", "opening_slots", "deals", "facilities"
+            )
+        else:
+            queryset = queryset.prefetch_related(
+                "categories", "images"
+            )
+        
+        queryset = queryset.annotate(
             active_deals_count=Count(
                 "deals",
                 filter=Q(
@@ -225,6 +235,25 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 pass  # Invalid coordinates, ignore filter
         
         return queryset
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        # Calculate distance if coordinates provided
+        params = request.query_params
+        lat = params.get("latitude") or params.get("lat")
+        lon = params.get("longitude") or params.get("lon")
+        
+        if lat and lon and instance.latitude is not None and instance.longitude is not None:
+            try:
+                distance = calculate_distance(lat, lon, instance.latitude, instance.longitude)
+                if distance is not None:
+                    instance._distance = distance
+            except (ValueError, TypeError):
+                pass
+        
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
     
     @action(detail=True, methods=["post", "delete"], permission_classes=[IsAuthenticated])
     def save(self, request, pk=None):
@@ -821,6 +850,26 @@ class RestaurantDetailViewSet(viewsets.ReadOnlyModelViewSet):
             "menu_categories__items", "opening_slots", "deals", "facilities"
         )
     
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = self.kwargs[lookup_url_kwarg]
+
+        # Try to lookup by ID if numeric
+        if str(lookup_value).isdigit():
+            try:
+                return queryset.get(pk=lookup_value)
+            except (Restaurant.DoesNotExist, ValueError):
+                pass
+        
+        # Default to lookup by slug
+        filter_kwargs = {self.lookup_field: lookup_value}
+        try:
+            return queryset.get(**filter_kwargs)
+        except Restaurant.DoesNotExist:
+            # Re-raise with a more helpful message or just use DRF's default
+            raise NotFound(f"No restaurant found with {self.lookup_field} or ID: {lookup_value}")
+
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         

@@ -445,17 +445,30 @@ class CuisineSerializer(serializers.ModelSerializer):
 class ReviewSerializer(serializers.ModelSerializer):
     user_email = serializers.CharField(source="user.email", read_only=True)
     user_name = serializers.SerializerMethodField()
+    user_profile_picture = serializers.SerializerMethodField()
     
     class Meta:
         model = Review
         fields = (
-            "id", "user", "user_email", "user_name", "restaurant",
+            "id", "user", "user_email", "user_name", "user_profile_picture", "restaurant",
             "rating", "comment", "is_verified", "created_at"
         )
         read_only_fields = ("user", "is_verified")
         
     def get_user_name(self, obj):
         return obj.user.get_full_name() or obj.user.username or obj.user.email.split('@')[0]
+    
+    def get_user_profile_picture(self, obj):
+        try:
+            profile = obj.user.profile
+            if profile.profile_picture:
+                request = self.context.get('request')
+                if request:
+                    return request.build_absolute_uri(profile.profile_picture.url)
+                return profile.profile_picture.url
+        except:
+            pass
+        return None
     
     def validate_rating(self, value):
         if not (1 <= value <= 5):

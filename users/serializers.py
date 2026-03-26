@@ -19,13 +19,34 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "email", "username", "is_merchant", "is_customer", "profile")
+        fields = ("id", "email", "username", "first_name", "last_name", "is_merchant", "is_customer", "profile")
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
+    profile_picture = serializers.ImageField(source='profile.profile_picture', required=False)
+    phone_number = serializers.CharField(source='profile.phone_number', required=False)
+    marketing_opt_in = serializers.BooleanField(source='profile.marketing_opt_in', required=False)
+
     class Meta:
         model = User
-        fields = ("username",)
+        fields = ("username", "first_name", "last_name", "profile_picture", "phone_number", "marketing_opt_in")
+
+    def update(self, instance, validated_data):
+        profile_data = validated_data.pop('profile', None)
+        
+        # Update User fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update Profile fields
+        if profile_data:
+            profile, created = UserProfile.objects.get_or_create(user=instance)
+            for attr, value in profile_data.items():
+                setattr(profile, attr, value)
+            profile.save()
+            
+        return instance
 
 
 
