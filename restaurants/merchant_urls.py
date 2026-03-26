@@ -16,7 +16,9 @@ from .views import (
     MerchantDashboardView,
     UpdateOccupancyView,
     RestaurantImageViewSet,
+    MerchantAnalyticsView,
 )
+
 
 router = DefaultRouter(trailing_slash=False)
 
@@ -35,6 +37,7 @@ router.register(
 urlpatterns = [
     # Restaurant management endpoints
     path("dashboard", MerchantDashboardView.as_view(), name="merchant-dashboard"),
+    path("analytics", MerchantAnalyticsView.as_view(), name="merchant-analytics"),
     path("restaurant/reviews", RestaurantReviewsManagementView.as_view(), name="restaurant-reviews"),
     path("restaurant/occupancy", UpdateOccupancyView.as_view(), name="restaurant-occupancy"),
     path("deals/redeem", DealRedemptionView.as_view(), name="deal-redeem"),
@@ -42,4 +45,5 @@ urlpatterns = [
     # Router URLs
     path("", include(router.urls)),
 ]
+
 
