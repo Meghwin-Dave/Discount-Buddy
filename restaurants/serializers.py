@@ -310,6 +310,7 @@ class DealSerializer(serializers.ModelSerializer):
 
 class DealListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for deal lists"""
+    restaurant_id = serializers.IntegerField(read_only=True)
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     restaurant_slug = serializers.CharField(source="restaurant.slug", read_only=True)
     city_name = serializers.CharField(source="restaurant.city.name", read_only=True)
@@ -319,7 +320,7 @@ class DealListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deal
         fields = (
-            "id", "title", "description", "deal_type", "restaurant_name",
+            "id", "restaurant_id", "title", "description", "deal_type", "restaurant_name",
             "restaurant_slug", "city_name", "discount_percentage",
             "discount_amount", "minimum_spend", "terms_and_conditions",
             "start_date", "end_date", "max_per_user",
@@ -358,6 +359,7 @@ class SavedDealSerializer(serializers.ModelSerializer):
 
 
 class DealUseSerializer(serializers.ModelSerializer):
+    restaurant_id = serializers.IntegerField(source="deal.restaurant_id", read_only=True)
     deal = DealListSerializer(read_only=True)
     qr_code_url = serializers.SerializerMethodField()
 
@@ -365,6 +367,7 @@ class DealUseSerializer(serializers.ModelSerializer):
         model = DealUse
         fields = (
             "id",
+            "restaurant_id",
             "deal",
             "used_at",
             "restaurant_confirmed",
@@ -500,16 +503,17 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
 
 
 class BookingSerializer(serializers.ModelSerializer):
+    booking_id = serializers.IntegerField(source="id", read_only=True)
+    restaurant_id = serializers.IntegerField(read_only=True)
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     restaurant_slug = serializers.CharField(source="restaurant.slug", read_only=True)
     restaurant_city_name = serializers.SerializerMethodField()
     can_cancel = serializers.SerializerMethodField()
 
-    
     class Meta:
         model = Booking
         fields = (
-            "id", "restaurant", "restaurant_name", "restaurant_slug", "restaurant_city_name",
+            "booking_id", "restaurant_id", "restaurant_name", "restaurant_slug", "restaurant_city_name",
             "booking_date", "number_of_guests", "status",
             "special_requests", "contact_phone", "contact_name",
             "can_cancel", "created_at"
@@ -535,10 +539,16 @@ class BookingSerializer(serializers.ModelSerializer):
 
 class BookingCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating bookings"""
+    booking_id = serializers.IntegerField(source="id", read_only=True)
+    restaurant_id = serializers.IntegerField(read_only=True)
     
     class Meta:
         model = Booking
-        fields = ("restaurant", "booking_date", "number_of_guests", "special_requests", "contact_phone", "contact_name")
+        fields = ("booking_id", "restaurant_id", "restaurant", "booking_date", "number_of_guests", "special_requests", "contact_phone", "contact_name")
+        read_only_fields = ("booking_id", "restaurant_id")
+        extra_kwargs = {
+            'restaurant': {'write_only': True}
+        }
         
     def validate_number_of_guests(self, value):
         if value < 1:

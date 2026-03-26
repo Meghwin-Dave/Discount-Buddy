@@ -12,10 +12,16 @@ class Notification(TimeStampedModel):
     Stores notifications for users with support for different types.
     """
     NOTIFICATION_TYPES = (
+        # --- Customer-facing ---
         ("BOOKING_CONFIRMED", "Booking Confirmed"),
         ("FAV_DEAL", "Favorite Restaurant Deal"),
         ("DEAL_REDEEMED", "Deal Redeemed"),
         ("SYSTEM", "System"),
+        # --- Merchant-facing ---
+        ("NEW_BOOKING", "New Booking Request"),
+        ("MERCHANT_DEAL_REDEEMED", "Deal Redeemed at Your Restaurant"),
+        ("MILESTONE_EARNINGS", "Earnings Milestone Reached"),
+        ("NEW_REVIEW", "New Customer Review"),
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

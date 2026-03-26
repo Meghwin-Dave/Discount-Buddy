@@ -229,6 +229,242 @@ class NotificationService:
         )
         return count
 
+    # ------------------------------------------------------------------ #
+    # Merchant-facing notifications
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _get_restaurant_owners(restaurant) -> list:
+        """
+        Return a list of User objects who are owners / managers of the given
+        restaurant.  Checks both the RestaurantProfile (owner_profile) and the
+        linked vouchers.Merchant user.
+        """
+        owners = []
+        try:
+            if hasattr(restaurant, "owner_profile") and restaurant.owner_profile:
+                owners.append(restaurant.owner_profile.user)
+        except Exception:
+            pass
+
+        try:
+            if restaurant.merchant and restaurant.merchant.user:
+                merchant_user = restaurant.merchant.user
+                if merchant_user not in owners:
+                    owners.append(merchant_user)
+        except Exception:
+            pass
+
+        return owners
+
+    @staticmethod
+    def notify_merchant_new_booking(booking) -> int:
+        """
+        Notify restaurant owner(s) when a customer makes a new booking request.
+
+        Args:
+            booking: Booking instance (status PENDING)
+
+        Returns:
+            Number of notifications created
+        """
+        restaurant = booking.restaurant
+        owners = NotificationService._get_restaurant_owners(restaurant)
+
+        if not owners:
+            return 0
+
+        # Ensure booking_date is formatted safely
+        try:
+            if isinstance(booking.booking_date, str):
+                from django.utils.dateparse import parse_datetime
+                dt_obj = parse_datetime(booking.booking_date)
+                booking_date_str = dt_obj.strftime('%B %d, %Y at %I:%M %p') if dt_obj else booking.booking_date
+            else:
+                booking_date_str = booking.booking_date.strftime('%B %d, %Y at %I:%M %p')
+        except Exception:
+            booking_date_str = str(booking.booking_date)
+
+        title = "New Table Booking Request 📅"
+        message = (
+            f"{booking.contact_name or booking.user.get_full_name() or booking.user.email} "
+            f"has requested a table for {booking.number_of_guests} guest(s) "
+            f"at {restaurant.name} on "
+            f"{booking_date_str}."
+        )
+
+        payload = {
+            "booking_id": str(booking.id),
+            "restaurant_id": str(restaurant.id),
+            "customer_name": booking.contact_name or booking.user.get_full_name() or booking.user.email,
+            "number_of_guests": booking.number_of_guests,
+            "booking_date": booking_date_str,
+        }
+
+        count = 0
+        for owner in owners:
+            NotificationService.create_notification(
+                user=owner,
+                title=title,
+                message=message,
+                notification_type="NEW_BOOKING",
+                payload=payload,
+                source_id=booking.id,
+                source_type="booking",
+            )
+            count += 1
+
+        return count
+
+    @staticmethod
+    def notify_merchant_deal_redeemed(deal_use) -> int:
+        """
+        Notify restaurant owner(s) when a customer successfully redeems a deal
+        at their restaurant.
+
+        Args:
+            deal_use: DealUse instance after is_redeemed is set to True
+
+        Returns:
+            Number of notifications created
+        """
+        restaurant = deal_use.deal.restaurant
+        owners = NotificationService._get_restaurant_owners(restaurant)
+
+        if not owners:
+            return 0
+
+        customer_name = (
+            deal_use.user.get_full_name() or deal_use.user.username or deal_use.user.email
+        )
+
+        title = "Deal Redeemed at Your Restaurant 🎉"
+        message = (
+            f"{customer_name} just redeemed \"{deal_use.deal.title}\" at {restaurant.name}."
+        )
+
+        payload = {
+            "deal_use_id": str(deal_use.id),
+            "deal_id": str(deal_use.deal.id),
+            "restaurant_id": str(restaurant.id),
+            "customer_name": customer_name,
+            "redemption_code": deal_use.redemption_code,
+        }
+
+        count = 0
+        for owner in owners:
+            NotificationService.create_notification(
+                user=owner,
+                title=title,
+                message=message,
+                notification_type="MERCHANT_DEAL_REDEEMED",
+                payload=payload,
+                source_id=deal_use.id,
+                source_type="deal_use",
+            )
+            count += 1
+
+        return count
+
+    @staticmethod
+    def notify_merchant_milestone(restaurant, milestone_amount: float) -> int:
+        """
+        Send a milestone congratulations notification to restaurant owner(s) when
+        cumulative earnings via the app cross a threshold.
+
+        Args:
+            restaurant: Restaurant instance
+            milestone_amount: The milestone value crossed (e.g. 100, 500, 1000)
+
+        Returns:
+            Number of notifications created
+        """
+        owners = NotificationService._get_restaurant_owners(restaurant)
+
+        if not owners:
+            return 0
+
+        title = f"Milestone Reached – £{int(milestone_amount):,} Earned! 🏆"
+        message = (
+            f"Congratulations! Your restaurant {restaurant.name} has crossed "
+            f"£{int(milestone_amount):,} in total customer savings/earnings through "
+            f"Discount Buddy. Keep it up!"
+        )
+
+        payload = {
+            "restaurant_id": str(restaurant.id),
+            "milestone_amount": milestone_amount,
+        }
+
+        count = 0
+        for owner in owners:
+            NotificationService.create_notification(
+                user=owner,
+                title=title,
+                message=message,
+                notification_type="MILESTONE_EARNINGS",
+                payload=payload,
+                source_id=restaurant.id,
+                source_type="restaurant",
+            )
+            count += 1
+
+        return count
+
+    @staticmethod
+    def notify_merchant_new_review(review) -> int:
+        """
+        Notify restaurant owner(s) when a customer posts a new review.
+
+        Args:
+            review: Review instance
+
+        Returns:
+            Number of notifications created
+        """
+        restaurant = review.restaurant
+        owners = NotificationService._get_restaurant_owners(restaurant)
+
+        if not owners:
+            return 0
+
+        customer_name = (
+            review.user.get_full_name() or review.user.username or review.user.email
+        )
+        stars = "⭐" * review.rating
+
+        title = "New Customer Review Posted ✍️"
+        message = (
+            f"{customer_name} left a {review.rating}-star review for {restaurant.name}. "
+            f"{stars}"
+        )
+        if review.comment:
+            # Include a snippet of the comment (max 80 chars)
+            snippet = review.comment[:80] + ("…" if len(review.comment) > 80 else "")
+            message += f'\n"{snippet}"'
+
+        payload = {
+            "review_id": str(review.id),
+            "restaurant_id": str(restaurant.id),
+            "customer_name": customer_name,
+            "rating": review.rating,
+        }
+
+        count = 0
+        for owner in owners:
+            NotificationService.create_notification(
+                user=owner,
+                title=title,
+                message=message,
+                notification_type="NEW_REVIEW",
+                payload=payload,
+                source_id=review.id,
+                source_type="review",
+            )
+            count += 1
+
+        return count
+
     @staticmethod
     def get_unread_count(user: User) -> int:
         """

@@ -313,13 +313,21 @@ FIREBASE_CREDENTIALS_PATH = BASE_DIR / "firebase-credentials.json"
 # Celery is REQUIRED for production to handle push notifications asynchronously
 # For development without Celery, push notifications will be skipped gracefully
 
-# Celery broker URL (Redis recommended)
-CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+# Celery broker URL (Redis recommended for production)
+REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("CELERY_BROKER_URL")
 
-# If no Redis is available, force eager mode (run synchronously)
-# This prevents crashes when Redis is missing
-CELERY_TASK_ALWAYS_EAGER = True
+if DEBUG and not REDIS_URL:
+    # Use memory broker for local dev if Redis isn't running
+    CELERY_BROKER_URL = "memory://"
+    CELERY_RESULT_BACKEND = None
+    CELERY_TASK_ALWAYS_EAGER = True
+else:
+    # Use Redis in production or if URL is provided
+    CELERY_BROKER_URL = REDIS_URL or "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+    # Set to False in production to ensure true async processing
+    CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "True").lower() == "true"
+
 CELERY_TASK_EAGER_PROPAGATES = True
 
 # Celery settings

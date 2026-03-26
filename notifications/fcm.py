@@ -27,6 +27,7 @@ def initialize_firebase():
     """
     Initialize Firebase Admin SDK.
     This is called lazily when first FCM message is sent.
+    Handles Django auto-reloader and 'already initialized' gracefully.
     """
     global _firebase_app
     
@@ -39,20 +40,33 @@ def initialize_firebase():
         from django.conf import settings
         import os
         
+        # If an app is already initialized (e.g. after Django auto-reload),
+        # just return it rather than calling initialize_app() again.
+        try:
+            _firebase_app = firebase_admin.get_app()
+            logger.info("Firebase Admin SDK already initialized, reusing existing app")
+            return _firebase_app
+        except ValueError:
+            pass  # No existing app – proceed to initialize
+
         # Try to get credentials from settings or environment
         cred = None
         
         # Option 1: Path to service account JSON file
         if hasattr(settings, 'FIREBASE_CREDENTIALS_PATH'):
-            cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+            cred_path = settings.FIREBASE_CREDENTIALS_PATH
+            if os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+            else:
+                logger.warning(f"Firebase credentials file not found at: {cred_path}")
         
         # Option 2: JSON content from environment variable
-        elif os.environ.get('FIREBASE_CREDENTIALS'):
+        if cred is None and os.environ.get('FIREBASE_CREDENTIALS'):
             import json
             cred_dict = json.loads(os.environ.get('FIREBASE_CREDENTIALS'))
             cred = credentials.Certificate(cred_dict)
         
-        else:
+        if cred is None:
             logger.warning(
                 "Firebase credentials not configured. "
                 "Set FIREBASE_CREDENTIALS_PATH in settings.py or "

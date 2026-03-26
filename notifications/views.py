@@ -158,8 +158,23 @@ class DeviceTokenViewSet(viewsets.ModelViewSet):
         return DeviceToken.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        """Save the device token with the current user"""
-        serializer.save(user=self.request.user)
+        token = serializer.validated_data.get('token')
+        device_type = serializer.validated_data.get('device_type')
+        
+        # Check if token already exists (even for a different user)
+        # We want to re-assign it to the current user and ensure it's active
+        existing_token = DeviceToken.objects.filter(token=token).first()
+        
+        if existing_token:
+            existing_token.user = self.request.user
+            existing_token.device_type = device_type
+            existing_token.is_active = True
+            existing_token.save()
+            # We don't call super().perform_create() because we just manually updated
+            # Set the serializer instance to the existing token so the response is correct
+            serializer.instance = existing_token
+        else:
+            serializer.save(user=self.request.user)
 
     @action(detail=True, methods=["patch"])
     def deactivate(self, request, pk=None):
