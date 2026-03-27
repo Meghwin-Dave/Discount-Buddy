@@ -155,7 +155,7 @@ GOOGLE_OAUTH_ALLOWED_CLIENT_IDS = [
 ]
 
 # Apple Sign In
-APPLE_OAUTH_CLIENT_ID = os.environ.get("APPLE_OAUTH_CLIENT_ID", "com.ketan.discountbuddy")
+APPLE_OAUTH_CLIENT_ID = os.environ.get("APPLE_OAUTH_CLIENT_ID", "com.discountbuddy.iosapp")
 APPLE_OAUTH_ALLOWED_CLIENT_IDS = [APPLE_OAUTH_CLIENT_ID]
 
 # Email configuration (for OTP and notifications)

@@ -298,7 +298,7 @@ class SocialLoginView(APIView):
                 # No, let's keep it simple: required provider for new logic.
         
         if (provider == "apple") or (not email and not provider):
-            allowed_client_ids = getattr(settings, "APPLE_OAUTH_ALLOWED_CLIENT_IDS", ["com.ketan.discountbuddy"])
+            allowed_client_ids = getattr(settings, "APPLE_OAUTH_ALLOWED_CLIENT_IDS", ["com.discountbuddy.iosapp"])
             try:
                 response = requests.get("https://appleid.apple.com/auth/keys")
                 apple_keys = response.json().get("keys", [])
