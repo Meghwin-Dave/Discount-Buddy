@@ -899,4 +899,8 @@ class RestaurantPartnerRequestSerializer(serializers.ModelSerializer):
             "city_name", "website", "comments", "status", "created_at"
         )
         read_only_fields = ("id", "status", "created_at")
+        extra_kwargs = {
+            "website": {"required": False, "allow_null": True, "allow_blank": True},
+            "comments": {"required": False, "allow_null": True, "allow_blank": True},
+        }
 

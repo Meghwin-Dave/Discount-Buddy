@@ -834,7 +834,7 @@ class RestaurantPartnerRequest(TimeStampedModel):
     phone = models.CharField(max_length=20)
     city_name = models.CharField(max_length=100)
     website = models.URLField(blank=True, null=True)
-    comments = models.TextField(blank=True)
+    comments = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
 
     class Meta:
