@@ -1,4 +1,5 @@
 import math
+from django.db import models
 from django.db.models import Q, Count, F, Avg, Sum
 from django.utils import timezone
 from django.core.cache import cache
