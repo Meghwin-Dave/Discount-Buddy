@@ -33,6 +33,7 @@ from .models import (
     MysteryEvidence,
     Facility,
     RestaurantImage,
+    RestaurantPartnerRequest,
 )
 from .serializers import (
     CountrySerializer,
@@ -64,6 +65,7 @@ from .serializers import (
     MysteryVisitSubmitSerializer,
     MysteryEvidenceSerializer,
     FacilitySerializer,
+    RestaurantPartnerRequestSerializer,
 )
 from .services import redeem_deal, calculate_distance, km_to_miles
 from users.permissions import (
@@ -186,10 +188,15 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
             )
         else:
             queryset = queryset.prefetch_related(
-                "categories", "images"
+                "categories", "images", "facilities", "cuisines"
             )
         
+        from django.db.models.functions import Coalesce
+        from django.db.models import Value
+        
         queryset = queryset.annotate(
+            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
+            reviews_count=Count("reviews", distinct=True),
             active_deals_count=Count(
                 "deals",
                 filter=Q(
@@ -235,6 +242,40 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 pass  # Invalid coordinates, ignore filter
         
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # Support latitude/longitude for distance calculation in list view
+        lat = request.query_params.get("latitude") or request.query_params.get("lat")
+        lon = request.query_params.get("longitude") or request.query_params.get("lon")
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            if lat and lon:
+                for restaurant in page:
+                    if restaurant.latitude and restaurant.longitude:
+                        try:
+                            dist_km = calculate_distance(lat, lon, float(restaurant.latitude), float(restaurant.longitude))
+                            if dist_km is not None:
+                                restaurant._distance_miles = km_to_miles(dist_km)
+                        except (ValueError, TypeError):
+                            pass
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        if lat and lon:
+            for restaurant in queryset:
+                if restaurant.latitude and restaurant.longitude:
+                    try:
+                        dist_km = calculate_distance(lat, lon, float(restaurant.latitude), float(restaurant.longitude))
+                        if dist_km is not None:
+                            restaurant._distance_miles = km_to_miles(dist_km)
+                    except (ValueError, TypeError):
+                        pass
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -320,6 +361,9 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         lat_delta = radius_km / 111.0
         lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
         
+        from django.db.models.functions import Coalesce
+        from django.db.models import Value
+
         restaurants = Restaurant.objects.filter(
             is_active=True,
             verified=True,
@@ -329,7 +373,21 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
             longitude__lte=lon + lon_delta,
             latitude__isnull=False,
             longitude__isnull=False
-        ).select_related("city", "city__country").prefetch_related("images", "facilities")
+        ).select_related("city", "city__country").prefetch_related(
+            "images", "facilities", "categories", "cuisines"
+        ).annotate(
+            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
+            reviews_count=Count("reviews", distinct=True),
+            active_deals_count=Count(
+                "deals",
+                filter=Q(
+                    deals__is_active=True,
+                    deals__start_date__lte=timezone.now(),
+                    deals__end_date__gte=timezone.now()
+                ),
+                distinct=True
+            )
+        )
         
         # Calculate actual distances and sort
         restaurants_with_distance = []
@@ -343,14 +401,12 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 if distance_km:
                     distance_miles = distance_km * 0.621371
                     if distance_miles <= radius_miles:
+                        restaurant._distance_miles = distance_miles
                         restaurants_with_distance.append((restaurant, distance_miles))
         
         # Sort by distance
         restaurants_with_distance.sort(key=lambda x: x[1])
-        restaurants = []
-        for r, distance_miles in restaurants_with_distance:
-            r._distance_miles = distance_miles
-            restaurants.append(r)
+        restaurants = [r[0] for r in restaurants_with_distance]
         
         serializer = RestaurantListSerializer(restaurants, many=True, context={"request": request})
         return Response(serializer.data)
@@ -1847,6 +1903,7 @@ class MerchantAnalyticsView(APIView):
             if dt:
                 hourly[dt.hour] += 1
                 daily_heatmap[dt.weekday()] += 1
+
         for bk in bookings_qs.values('booking_date'):
             dt = bk['booking_date']
             if dt:
@@ -2098,3 +2155,15 @@ class MerchantAnalyticsView(APIView):
             'suggestions': [{'type': 'add_restaurant', 'action': 'add_restaurant',
                              'message': 'Register your restaurant to unlock insights.'}],
         }
+
+
+from rest_framework import mixins
+
+class RestaurantPartnerRequestViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
+    """
+    ViewSet for public 'Join as Restaurant Partner' inquiries.
+    POST: Submit a new inquiry form.
+    """
+    queryset = RestaurantPartnerRequest.objects.all()
+    serializer_class = RestaurantPartnerRequestSerializer
+    permission_classes = [AllowAny]

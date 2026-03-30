@@ -22,6 +22,7 @@ from .models import (
     MysteryScore,
     MysteryEvidence,
     Facility,
+    RestaurantPartnerRequest,
 )
 
 
@@ -197,8 +198,8 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     city_name = serializers.CharField(source="city.name", read_only=True)
     country_name = serializers.CharField(source="city.country.name", read_only=True)
     primary_image = serializers.SerializerMethodField()
-    average_rating = serializers.FloatField(read_only=True, default=0.0)
-    review_count = serializers.IntegerField(source="reviews_count", read_only=True, default=0)
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
     active_deals_count = serializers.IntegerField(read_only=True)
     leaderboard_score = serializers.SerializerMethodField()
     distance_miles = serializers.SerializerMethodField()
@@ -235,6 +236,24 @@ class RestaurantListSerializer(serializers.ModelSerializer):
 
     def get_leaderboard_score(self, obj):
         return obj.get_leaderboard_score()
+
+    def get_average_rating(self, obj):
+        # 1. Try to use annotated value (preferred for performance)
+        val = getattr(obj, "average_rating", None)
+        if val is not None:
+            return round(float(val), 1)
+        
+        # 2. Fallback to model method
+        return round(obj.get_average_rating(), 1) or 0.0
+
+    def get_review_count(self, obj):
+        # 1. Try to use annotated value
+        val = getattr(obj, "reviews_count", None)
+        if val is not None:
+            return int(val)
+            
+        # 2. Fallback to model method
+        return obj.get_reviews_count() or 0
 
     def get_distance_miles(self, obj):
         # Check pre-calculated miles or convert from pre-calculated km
@@ -870,4 +889,14 @@ class DealRedemptionRequestSerializer(serializers.Serializer):
         if not redemption_code and not qr_data:
             raise serializers.ValidationError("Either redemption_code or qr_data is required.")
         return attrs
+
+class RestaurantPartnerRequestSerializer(serializers.ModelSerializer):
+    """Serializer for 'Join as Restaurant Partner' form"""
+    class Meta:
+        model = RestaurantPartnerRequest
+        fields = (
+            "id", "restaurant_name", "contact_name", "email", "phone",
+            "city_name", "website", "comments", "status", "created_at"
+        )
+        read_only_fields = ("id", "status", "created_at")
 

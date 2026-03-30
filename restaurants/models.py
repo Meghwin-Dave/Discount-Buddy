@@ -811,3 +811,36 @@ class MysteryEvidence(TimeStampedModel):
 # Alias models for clarity (using existing models)
 # FavouriteRestaurant = SavedRestaurant (already exists)
 # ClaimedDeal = DealUse (already exists)
+
+class RestaurantPartnerRequest(TimeStampedModel):
+    """
+    Model to store 'Join as Restaurant Partner' inquiries from the mobile app.
+    """
+    STATUS_PENDING = "pending"
+    STATUS_CONTACTED = "contacted"
+    STATUS_REJECTED = "rejected"
+    STATUS_APPROVED = "approved"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_CONTACTED, "Contacted"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_APPROVED, "Approved"),
+    ]
+
+    restaurant_name = models.CharField(max_length=255)
+    contact_name = models.CharField(max_length=255)
+    email = models.EmailField()
+    phone = models.CharField(max_length=20)
+    city_name = models.CharField(max_length=100)
+    website = models.URLField(blank=True, null=True)
+    comments = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Restaurant Partner Request"
+        verbose_name_plural = "Restaurant Partner Requests"
+
+    def __str__(self):
+        return f"{self.restaurant_name} - {self.contact_name}"
