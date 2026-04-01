@@ -1,4 +1,6 @@
 import math
+from django.core.mail import send_mail
+from django.conf import settings
 from django.db import models
 from django.db.models import Q, Count, F, Avg, Sum
 from django.utils import timezone
@@ -2168,3 +2170,41 @@ class RestaurantPartnerRequestViewSet(mixins.CreateModelMixin, viewsets.GenericV
     queryset = RestaurantPartnerRequest.objects.all()
     serializer_class = RestaurantPartnerRequestSerializer
     permission_classes = [AllowAny]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+
+        # Send email notification after successful creation
+        subject = f"🔔 New Restaurant Partner Inquiry: {instance.restaurant_name}"
+
+        # Proper layout for the email
+        email_body = (
+            f"Dear Admin,\n\n"
+            f"You have received a new 'Join as Restaurant Partner' inquiry through Discount Buddy.\n\n"
+            f"DETAILS:\n"
+            f"----------------------------------------\n"
+            f"Restaurant Name:    {instance.restaurant_name}\n"
+            f"Owner/Contact Name: {instance.contact_name}\n"
+            f"Email Address:      {instance.email}\n"
+            f"Phone Number:       {instance.phone}\n"
+            f"City Location:      {instance.city_name}\n"
+            f"Website:            {instance.website or 'Not provided'}\n"
+            f"----------------------------------------\n\n"
+            f"ADDITIONAL COMMENTS:\n"
+            f"{instance.comments or 'No comments provided.'}\n\n"
+            f"Date Submitted: {instance.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"Regards,\n"
+            f"Discount Buddy System"
+        )
+
+        try:
+            send_mail(
+                subject=subject,
+                message=email_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=["info@markitupgroup.com"],
+                fail_silently=False,
+            )
+        except Exception as e:
+            # We log it but don't break the user's successful submission
+            print(f"Error sending partner request email: {e}")

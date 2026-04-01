@@ -159,15 +159,15 @@ APPLE_OAUTH_CLIENT_ID = os.environ.get("APPLE_OAUTH_CLIENT_ID", "com.discountbud
 APPLE_OAUTH_ALLOWED_CLIENT_IDS = [APPLE_OAUTH_CLIENT_ID]
 
 # Email configuration (for OTP and notifications)
-# Use Gmail App Password: https://myaccount.google.com/apppasswords
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "priyanshuchavda999@gmail.com")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "evxd tzoy ulbf rdap")  # Gmail App Password
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.hostinger.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "465"))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "False").lower() == "true"
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "True").lower() == "true"
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "info@markitupgroup.com")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", "Discount Buddy <priyanshuchavda999@gmail.com>"
+    "DEFAULT_FROM_EMAIL", "Discount Buddy <info@markitupgroup.com>"
 )
 
 # django-allauth

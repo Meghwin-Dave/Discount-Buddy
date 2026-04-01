@@ -39,6 +39,7 @@ class RegisterInitView(APIView):
     """
 
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def post(self, request, *args, **kwargs):
         serializer = RegisterInitSerializer(data=request.data)
@@ -89,6 +90,7 @@ class VerifyOTPView(APIView):
     """
 
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def post(self, request, *args, **kwargs):
         serializer = VerifyOTPSerializer(data=request.data)
@@ -142,6 +144,7 @@ class RegisterCompleteView(APIView):
     """
 
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def post(self, request, *args, **kwargs):
         serializer = RegisterCompleteSerializer(data=request.data)
@@ -217,6 +220,7 @@ class RegisterView(generics.CreateAPIView):
 
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
 
 class MeView(APIView):
