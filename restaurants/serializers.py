@@ -348,6 +348,9 @@ class DealListSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     restaurant_slug = serializers.CharField(source="restaurant.slug", read_only=True)
     city_name = serializers.CharField(source="restaurant.city.name", read_only=True)
+    latitude = serializers.FloatField(source="restaurant.latitude", read_only=True)
+    longitude = serializers.FloatField(source="restaurant.longitude", read_only=True)
+    distance_miles = serializers.SerializerMethodField()
     primary_image = serializers.SerializerMethodField()
     is_active = serializers.SerializerMethodField()
     
@@ -357,10 +360,13 @@ class DealListSerializer(serializers.ModelSerializer):
             "id", "restaurant_id", "title", "description", "deal_type", "restaurant_name",
             "restaurant_slug", "city_name", "discount_percentage",
             "discount_amount", "minimum_spend", "terms_and_conditions",
-            "start_date", "end_date", "max_per_user",
+            "start_date", "end_date", "max_per_user", "latitude", "longitude", "distance_miles",
             "is_featured", "primary_image", "is_active", "created_at"
         )
         
+    def get_distance_miles(self, obj):
+        return getattr(obj.restaurant, "_distance_miles", None) or getattr(obj, "_distance_miles", None)
+
     def get_primary_image(self, obj):
         primary_img = obj.images.filter(is_primary=True).first()
         if not primary_img:

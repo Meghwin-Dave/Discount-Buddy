@@ -504,6 +504,48 @@ class DealViewSet(viewsets.ReadOnlyModelViewSet):
         
         serializer = DealListSerializer(deals, many=True, context={"request": request})
         return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny])
+    def flash(self, request):
+        """Get 'Hot Now' (Flash Deals) - Ending today, high urgency."""
+        now = timezone.now()
+        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        deals = Deal.objects.filter(
+            is_active=True,
+            restaurant__is_active=True,
+            restaurant__verified=True,
+            start_date__lte=now,
+            end_date__gte=now,
+            end_date__lte=today_end
+        ).select_related("restaurant", "restaurant__city").prefetch_related("images")
+
+        lat = request.query_params.get("latitude")
+        lon = request.query_params.get("longitude")
+        
+        if lat and lon:
+            from .utils import calculate_distance
+            try:
+                lat = float(lat)
+                lon = float(lon)
+                deals_with_distance = []
+                for deal in deals:
+                    dist_km = calculate_distance(
+                        lat, lon,
+                        float(deal.restaurant.latitude),
+                        float(deal.restaurant.longitude)
+                    )
+                    if dist_km is not None:
+                        deal.restaurant._distance_miles = dist_km * 0.621371
+                    deals_with_distance.append(deal)
+                deals = sorted(deals_with_distance, key=lambda x: getattr(x.restaurant, "_distance_miles", 9999))
+            except (ValueError, TypeError):
+                deals = deals.order_by("end_date")
+        else:
+            deals = deals.order_by("end_date")
+
+        serializer = DealListSerializer(deals[:20], many=True, context={"request": request})
+        return Response(serializer.data)
     
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def use(self, request, pk=None):
