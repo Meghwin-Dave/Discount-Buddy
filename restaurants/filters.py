@@ -12,7 +12,7 @@ class RestaurantFilter(filters.FilterSet):
     
     class Meta:
         model = Restaurant
-        fields = ["city", "verified", "is_featured", "categories", "price_range"]
+        fields = ["city", "verified", "is_featured", "categories", "cuisines", "price_range"]
     
     def filter_has_deals(self, queryset, name, value):
         """Filter restaurants that have active deals"""

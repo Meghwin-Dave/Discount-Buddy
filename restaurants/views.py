@@ -169,7 +169,7 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = RestaurantFilter
-    search_fields = ["name", "description", "address", "city__name"]
+    search_fields = ["name", "description", "address", "city__name", "cuisines__name"]
     ordering_fields = ["name", "created_at", "is_featured"]
     ordering = ["-is_featured", "-created_at"]
     

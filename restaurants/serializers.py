@@ -116,6 +116,15 @@ class RestaurantSerializer(serializers.ModelSerializer):
         required=False,
         help_text="List of category IDs"
     )
+    cuisines = CuisineSerializer(many=True, read_only=True)
+    cuisine_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Cuisine.objects.all(),
+        source='cuisines',
+        many=True,
+        write_only=True,
+        required=False,
+        help_text="List of cuisine IDs"
+    )
     images = RestaurantImageSerializer(many=True, read_only=True)
     facilities = FacilitySerializer(many=True, read_only=True)
     active_deals_count = serializers.IntegerField(read_only=True)
@@ -127,10 +136,11 @@ class RestaurantSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "city", "city_id", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
+            "cuisine_ids", "cuisines",
             "price_range", "occupancy", "verified", "is_featured", "opening_hours",
             "menu_type", "images", "active_deals_count", "is_saved", "is_favourite", "facilities", "created_at"
         )
-        read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "images")
+        read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "cuisines", "images")
         
     def get_is_saved(self, obj):
         request = self.context.get("request")
@@ -160,16 +170,19 @@ class RestaurantSerializer(serializers.ModelSerializer):
         
         # Handle categories if provided
         categories = validated_data.pop('categories', [])
+        cuisines = validated_data.pop('cuisines', [])
         restaurant = Restaurant.objects.create(**validated_data)
         
         if categories:
             restaurant.categories.set(categories)
+        if cuisines:
+            restaurant.cuisines.set(cuisines)
         
         return restaurant
     
-    def update(self, instance, validated_data):
         # Handle categories if provided
         categories = validated_data.pop('categories', None)
+        cuisines = validated_data.pop('cuisines', None)
         
         # Auto-update slug if name changed
         if 'name' in validated_data and validated_data['name'] != instance.name:
@@ -189,6 +202,8 @@ class RestaurantSerializer(serializers.ModelSerializer):
         
         if categories is not None:
             instance.categories.set(categories)
+        if cuisines is not None:
+            instance.cuisines.set(cuisines)
         
         return instance
 
