@@ -99,14 +99,23 @@ class RestaurantImageSerializer(serializers.ModelSerializer):
 
 
 class CuisineSerializer(serializers.ModelSerializer):
-    restaurants_count = serializers.SerializerMethodField()
-    
     class Meta:
         model = Cuisine
-        fields = ("id", "name", "slug", "icon", "is_active", "restaurants_count", "created_at")
-        
-    def get_restaurants_count(self, obj):
-        return obj.restaurants.filter(is_active=True, verified=True).count()
+        fields = ("id", "name", "icon")
+
+
+class HomeScreenCuisineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Cuisine
+        fields = ("id", "name", "icon")
+
+
+class HomeScreenCuisineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Cuisine
+        fields = ("id", "name", "icon")
+
+
 
 
 class RestaurantSerializer(serializers.ModelSerializer):
@@ -232,6 +241,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     distance_miles = serializers.SerializerMethodField()
     is_favourite = serializers.SerializerMethodField()
     active_deals = serializers.SerializerMethodField()
+    cuisines = CuisineSerializer(many=True, read_only=True)
 
     
     class Meta:
@@ -240,7 +250,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
-            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "is_favourite", "active_deals"
+            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "is_favourite", "active_deals", "cuisines"
         )
 
         
@@ -392,6 +402,17 @@ class DealListSerializer(serializers.ModelSerializer):
     
     def get_is_active(self, obj):
         return obj.is_active_now()
+
+
+class HomeScreenDealSerializer(serializers.ModelSerializer):
+    type = serializers.CharField(source="deal_type")
+
+    class Meta:
+        model = Deal
+        fields = (
+            "id", "title", "type", "discount_percentage",
+            "minimum_spend", "start_date", "end_date", "restaurant_id"
+        )
 
 
 class SavedRestaurantSerializer(serializers.ModelSerializer):
@@ -805,6 +826,87 @@ class RestaurantProfileSerializer(serializers.ModelSerializer):
         model = RestaurantProfile
         fields = ("id", "user", "user_email", "restaurant", "is_primary_owner", "created_at")
         read_only_fields = ("user", "restaurant")
+
+
+class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
+    location = serializers.SerializerMethodField()
+    rating = serializers.SerializerMethodField()
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
+    distance_km = serializers.SerializerMethodField()
+    distance_miles = serializers.SerializerMethodField()
+    cuisines = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    deals = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
+    is_favourite = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Restaurant
+        fields = (
+            "id", "name", "slug", "description", "location", "price_range", "occupancy",
+            "verified", "is_featured", "image", "rating", "average_rating", "review_count",
+            "distance_km", "distance_miles", "cuisines", "deals", "is_favourite"
+        )
+
+    def get_location(self, obj):
+        return {
+            "city": obj.city.name if obj.city else None,
+            "country": obj.city.country.name if obj.city and obj.city.country else None,
+            "lat": float(obj.latitude) if obj.latitude else None,
+            "lng": float(obj.longitude) if obj.longitude else None
+        }
+
+    def get_rating(self, obj):
+        return {
+            "average": self.get_average_rating(obj),
+            "count": self.get_review_count(obj)
+        }
+
+    def get_average_rating(self, obj):
+        return round(float(getattr(obj, 'average_rating', obj.get_average_rating()) or 0.0), 1)
+
+    def get_review_count(self, obj):
+        return getattr(obj, 'reviews_count', obj.get_reviews_count()) or 0
+
+    def get_distance_km(self, obj):
+        dist = getattr(obj, '_distance', None)
+        if dist is None:
+            dist_miles = getattr(obj, '_distance_miles', None)
+            if dist_miles is not None:
+                dist = dist_miles * 1.60934
+        return round(float(dist), 2) if dist is not None else None
+
+    def get_distance_miles(self, obj):
+        dist_miles = getattr(obj, '_distance_miles', None)
+        if dist_miles is None:
+            dist_km = getattr(obj, '_distance', None)
+            if dist_km is not None:
+                dist_miles = float(dist_km) * 0.621371
+        return round(float(dist_miles), 2) if dist_miles is not None else None
+
+    def get_image(self, obj):
+        primary_img = obj.images.filter(is_primary=True).first() or obj.images.first()
+        if primary_img and primary_img.image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(primary_img.image.url)
+            return primary_img.image.url
+        return None
+
+    def get_is_favourite(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
+        return False
+
+    def get_deals(self, obj):
+        from django.utils import timezone
+        now = timezone.now()
+        return list(obj.deals.filter(
+            is_active=True,
+            start_date__lte=now,
+            end_date__gte=now
+        ).values_list("id", flat=True))
 
 
 class MysteryEvidenceSerializer(serializers.ModelSerializer):

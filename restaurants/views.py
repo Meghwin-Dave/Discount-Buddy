@@ -69,6 +69,9 @@ from .serializers import (
     MysteryEvidenceSerializer,
     FacilitySerializer,
     RestaurantPartnerRequestSerializer,
+    HomeScreenRestaurantSerializer,
+    HomeScreenDealSerializer,
+    HomeScreenCuisineSerializer,
 )
 from .services import redeem_deal, calculate_distance, km_to_miles
 from users.permissions import (
@@ -882,54 +885,80 @@ class HomeScreenView(generics.GenericAPIView):
         )[:10]
         top_10 = populate_distances(top_10)
         
-        # Cuisine-based segregation
-        cuisines = Cuisine.objects.filter(
-            is_active=True,
-            restaurants__in=queryset
-        ).distinct().annotate(
-            restaurants_count=Count("restaurants", filter=Q(restaurants__in=queryset))
-        )
-        
-        cuisine_data = []
-        for cuisine in cuisines:
-            cuisine_restaurants = list(queryset.filter(cuisines=cuisine)[:10])
-            cuisine_restaurants = populate_distances(cuisine_restaurants)
-            cuisine_data.append({
-                "cuisine": CuisineSerializer(cuisine, context={"request": request}).data,
-                "restaurants": RestaurantListSerializer(
-                    cuisine_restaurants,
-                    many=True,
-                    context={"request": request}
-                ).data
-            })
-        
-        # All restaurants (card format) – keep default ordering but include leaderboard_score in payload
+        # Featured restaurants
+        featured = list(queryset.filter(is_featured=True)[:10])
+        featured = populate_distances(featured)
+
+        # Favourites (Saved restaurants)
+        favourites = []
+        if request.user.is_authenticated:
+            saved_restaurants = SavedRestaurant.objects.filter(
+                user=request.user
+            ).select_related("restaurant", "restaurant__city").prefetch_related(
+                "restaurant__images", "restaurant__cuisines", "restaurant__deals"
+            )
+            favourites = [sr.restaurant for sr in saved_restaurants]
+            favourites = populate_distances(favourites)
+
+        # All restaurants (card format) – keep default ordering but limit return
         all_restaurants = list(queryset.order_by("-is_featured", "-average_rating")[:50])
         all_restaurants = populate_distances(all_restaurants)
+
+        # Aggregate everything for normalization
+        all_encountered_restaurants = set()
+        for r in nearby_restaurants: all_encountered_restaurants.add(r)
+        for r in top_10: all_encountered_restaurants.add(r)
+        for r in featured: all_encountered_restaurants.add(r)
+        for r in favourites: all_encountered_restaurants.add(r)
+        for r in all_restaurants: all_encountered_restaurants.add(r)
+
+        # Collect unique Deals and Cuisines
+        all_deals_ids = set()
+        all_cuisines_ids = set()
         
+        # Build Restaurants Dictionary
+        restaurants_dict = {}
+        for r in all_encountered_restaurants:
+            restaurants_dict[str(r.id)] = HomeScreenRestaurantSerializer(r, context={"request": request}).data
+            
+            # Efficiently collect IDs for deals and cuisines
+            # Note: We use the already prefetched deals/cuisines
+            now = timezone.now()
+            all_deals_ids.update(r.deals.filter(
+                is_active=True,
+                start_date__lte=now,
+                end_date__gte=now
+            ).values_list("id", flat=True))
+            all_cuisines_ids.update(r.cuisines.values_list("id", flat=True))
+
+        # Build Deals Dictionary
+        active_deals = Deal.objects.filter(id__in=all_deals_ids).select_related("restaurant")
+        deals_dict = {
+            str(d.id): HomeScreenDealSerializer(d, context={"request": request}).data 
+            for d in active_deals
+        }
+
+        # Build Cuisines Dictionary
+        active_cuisines_objs = Cuisine.objects.filter(id__in=all_cuisines_ids)
+        cuisines_dict = {
+            str(c.id): HomeScreenCuisineSerializer(c, context={"request": request}).data 
+            for c in active_cuisines_objs
+        }
+
         return Response({
-            "search_query": search_query,
-            "now_open": RestaurantListSerializer(
-                now_open_restaurants or [],
-                many=True,
-                context={"request": request}
-            ).data,
-            "nearby": RestaurantListSerializer(
-                nearby_restaurants or [],
-                many=True,
-                context={"request": request}
-            ).data,
-            "cuisines": cuisine_data,
-            "top_10": RestaurantListSerializer(
-                top_10,
-                many=True,
-                context={"request": request}
-            ).data,
-            "all_restaurants": RestaurantListSerializer(
-                all_restaurants,
-                many=True,
-                context={"request": request}
-            ).data
+            "meta": {
+                "lat": float(latitude) if latitude else None,
+                "lng": float(longitude) if longitude else None
+            },
+            "restaurants": restaurants_dict,
+            "deals": deals_dict,
+            "cuisines": cuisines_dict,
+            "sections": {
+                "nearby": [r.id for r in nearby_restaurants],
+                "top_10": [r.id for r in top_10],
+                "featured": [r.id for r in featured],
+                "favourites": [r.id for r in favourites]
+            }
         })
 
 
