@@ -98,6 +98,17 @@ class RestaurantImageSerializer(serializers.ModelSerializer):
         return None
 
 
+class CuisineSerializer(serializers.ModelSerializer):
+    restaurants_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Cuisine
+        fields = ("id", "name", "slug", "icon", "is_active", "restaurants_count", "created_at")
+        
+    def get_restaurants_count(self, obj):
+        return obj.restaurants.filter(is_active=True, verified=True).count()
+
+
 class RestaurantSerializer(serializers.ModelSerializer):
     city = CitySerializer(read_only=True)
     city_id = serializers.PrimaryKeyRelatedField(
@@ -180,6 +191,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         
         return restaurant
     
+    def update(self, instance, validated_data):
         # Handle categories if provided
         categories = validated_data.pop('categories', None)
         cuisines = validated_data.pop('cuisines', None)
@@ -471,15 +483,7 @@ class DealUseCreateSerializer(serializers.ModelSerializer):
 
 
 # New serializers for mobile app features
-class CuisineSerializer(serializers.ModelSerializer):
-    restaurants_count = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Cuisine
-        fields = ("id", "name", "slug", "icon", "is_active", "restaurants_count", "created_at")
-        
-    def get_restaurants_count(self, obj):
-        return obj.restaurants.filter(is_active=True, verified=True).count()
+
 
 
 class ReviewSerializer(serializers.ModelSerializer):
