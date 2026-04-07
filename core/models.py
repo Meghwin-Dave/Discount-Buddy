@@ -16,4 +16,16 @@ class SoftDeleteModel(models.Model):
     class Meta:
         abstract = True
 
+class Banner(TimeStampedModel, SoftDeleteModel):
+    is_visible = models.BooleanField(default=True)
+    priority = models.IntegerField(default=0, help_text="Higher numbers appear first/have higher priority")
+    image = models.ImageField(upload_to='banners/', null=True, blank=True)
+    title = models.CharField(max_length=255, null=True, blank=True)
+    body = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-priority', '-created_at']
+
+    def __str__(self):
+        return f"Banner {self.id} - {'Visible' if self.is_visible else 'Hidden'}"
 

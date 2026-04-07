@@ -1123,18 +1123,18 @@ class BookingViewSet(viewsets.ModelViewSet):
 
 class ProfileStatsView(generics.GenericAPIView):
     """
-    User profile stats: deals claimed, money saved, user level, restaurants visited, cities visited
+    User profile stats: deals claimed, money saved, user level, progression, and weekly stats.
     """
     permission_classes = [IsUser]
     
     def get(self, request):
         user = request.user
+        now = timezone.now()
         
-        # Deals claimed (DealUse)
+        # 1. Base Metrics
         deals_claimed = DealUse.objects.filter(user=user).count()
+        from django.db.models import Sum, Count
         
-        # Money saved (sum of discount amounts from used deals)
-        from django.db.models import Sum
         money_saved = DealUse.objects.filter(
             user=user,
             is_redeemed=True
@@ -1142,9 +1142,8 @@ class ProfileStatsView(generics.GenericAPIView):
             total_saved=Sum("discount_amount_saved")
         )["total_saved"] or 0
         
-        # Restaurants visited (unique restaurants from bookings and deal uses)
-        from django.db.models import Count
-        restaurants_visited = Booking.objects.filter(
+        # Restaurants visited
+        restaurants_from_bookings = Booking.objects.filter(
             user=user,
             status__in=[Booking.STATUS_CONFIRMED, Booking.STATUS_COMPLETED]
         ).values("restaurant").distinct().count()
@@ -1153,39 +1152,120 @@ class ProfileStatsView(generics.GenericAPIView):
             user=user
         ).values("deal__restaurant").distinct().count()
         
-        total_restaurants_visited = max(restaurants_visited, restaurants_from_deals)
-        
-        # Cities visited
+        total_restaurants_visited = max(restaurants_from_bookings, restaurants_from_deals)
         cities_visited = Booking.objects.filter(
             user=user,
             status__in=[Booking.STATUS_CONFIRMED, Booking.STATUS_COMPLETED]
         ).values("restaurant__city").distinct().count()
-        
-        # User level (logic-based: Bronze, Silver, Gold, Platinum)
+
+        # 2. Level & Progression Logic
         total_activity = deals_claimed + total_restaurants_visited
-        if total_activity >= 100:
-            user_level = "Platinum"
-        elif total_activity >= 50:
-            user_level = "Gold"
-        elif total_activity >= 20:
-            user_level = "Silver"
+        
+        tiers = [
+            {"name": "Bronze", "min_points": 0, "max_points": 19},
+            {"name": "Silver", "min_points": 20, "max_points": 49},
+            {"name": "Gold", "min_points": 50, "max_points": 99},
+            {"name": "Platinum", "min_points": 100, "max_points": 999999}
+        ]
+        
+        current_tier = tiers[0]
+        next_tier = None
+        
+        for i, tier in enumerate(tiers):
+            if total_activity >= tier["min_points"]:
+                current_tier = tier
+                if i + 1 < len(tiers):
+                    next_tier = tiers[i+1]
+                else:
+                    next_tier = None # Max Tier
+            else:
+                break
+        
+        progression = {
+            "current_points": total_activity,
+            "tier": current_tier["name"],
+            "rank": current_tier["name"], # Using Tier as Rank name for now
+        }
+        
+        if next_tier:
+            points_to_next = next_tier["min_points"] - total_activity
+            # Calculate percentage relative to the current tier's range
+            range_total = next_tier["min_points"] - current_tier["min_points"]
+            range_current = total_activity - current_tier["min_points"]
+            progress_pct = min(1.0, max(0.0, range_current / range_total)) if range_total > 0 else 1.0
+            
+            progression["next_tier"] = {
+                "name": next_tier["name"],
+                "points_to_reach": next_tier["min_points"],
+                "points_remaining": points_to_next,
+                "progress_percentage": round(progress_pct, 2),
+                "message": f"{points_to_next} more points to reach {next_tier['name']}"
+            }
         else:
-            user_level = "Bronze"
+            progression["next_tier"] = None # Already Platinum
+            progression["message"] = "You have reached the highest tier!"
+
+        # 3. Weekly Stats & Reset Timer
+        # Calculate start of week (Monday)
+        from datetime import timedelta
+        start_of_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        weekly_redemptions = DealUse.objects.filter(
+            user=user,
+            is_redeemed=True,
+            redeemed_at__gte=start_of_week
+        ).count()
         
-        # Favourite restaurants count
-        favourite_count = SavedRestaurant.objects.filter(user=user).count()
+        # Seconds until next Monday 00:00
+        next_monday = start_of_week + timedelta(days=7)
+        reset_timer_seconds = int((next_monday - now).total_seconds())
         
-        # Reviews count
-        reviews_count = Review.objects.filter(user=user).count()
+        # 4. Badge System (Simple Logic)
+        badges = [
+            {
+                "id": "first_redemption",
+                "name": "Bargain Hunter",
+                "icon": "local_offer",
+                "earned": deals_claimed > 0,
+                "description": "Claimed your first deal"
+            },
+            {
+                "id": "explorer",
+                "name": "City Explorer",
+                "icon": "explore",
+                "earned": cities_visited >= 3,
+                "description": "Visited restaurants in 3 different cities"
+            },
+            {
+                "id": "reviewer",
+                "name": "Top Critic",
+                "icon": "rate_review",
+                "earned": Review.objects.filter(user=user).count() >= 5,
+                "description": "Shared 5 or more reviews"
+            },
+            {
+                "id": "frequent_diner",
+                "name": "Regular",
+                "icon": "restaurant",
+                "earned": total_restaurants_visited >= 10,
+                "description": "Visited 10+ unique restaurants"
+            }
+        ]
         
+        # 5. Final Response
         return Response({
             "deals_claimed": deals_claimed,
             "money_saved": float(money_saved),
-            "user_level": user_level,
-            "restaurants_visited": total_restaurants_visited,
+            "total_restaurants_visited": total_restaurants_visited,
             "cities_visited": cities_visited,
-            "favourite_restaurants": favourite_count,
-            "reviews_written": reviews_count
+            "favourite_restaurants": SavedRestaurant.objects.filter(user=user).count(),
+            "reviews_written": Review.objects.filter(user=user).count(),
+            "progression": progression,
+            "weekly": {
+                "redemptions": weekly_redemptions,
+                "reset_timer_seconds": reset_timer_seconds,
+                "reset_message": f"Weekly stats reset in {reset_timer_seconds // 3600} hours"
+            },
+            "badges": badges
         })
 
 
