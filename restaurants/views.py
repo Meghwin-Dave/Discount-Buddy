@@ -1797,8 +1797,11 @@ class MerchantDashboardView(APIView):
         earnings_agg = DealUse.objects.filter(
             deal_use_filter,
             is_redeemed=True
-        ).aggregate(total=Sum('price'))
-        total_earnings = float(earnings_agg['total'] or 0.0)
+        ).aggregate(
+            total=Sum('final_bill_amount'),
+            total_fallback=Sum('price'),
+        )
+        total_earnings = float(earnings_agg['total'] or earnings_agg['total_fallback'] or 0.0)
 
         # List of all restaurants for selector
         restaurants = list(restaurants_owned.values('id', 'name'))
