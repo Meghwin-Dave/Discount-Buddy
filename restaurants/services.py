@@ -234,6 +234,13 @@ def redeem_deal(
             if p_count >= 2:
                 discount_amount_saved = price_dec / Decimal("2")
                 final_bill_amount = price_dec - discount_amount_saved
+        elif deal.deal_type == Deal.DEAL_TYPE_COMBO:
+            # Combo deals have a fixed price, savings aren't easily calculated 
+            # without a base price, so we just track it.
+            discount_amount_saved = Decimal("0.00")
+            # If the user enters the bill, we don't automatically subtract anything 
+            # because the 'price' entered is usually the final bill already.
+            final_bill_amount = price_dec
         
         deal_use.discount_amount_saved = discount_amount_saved
         deal_use.final_bill_amount = final_bill_amount

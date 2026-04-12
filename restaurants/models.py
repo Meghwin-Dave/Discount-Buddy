@@ -262,12 +262,14 @@ class Deal(TimeStampedModel, SoftDeleteModel):
     DEAL_TYPE_TWO_FOR_ONE = "two_for_one"
     DEAL_TYPE_PERCENTAGE = "percentage"
     DEAL_TYPE_FIXED = "fixed"
+    DEAL_TYPE_COMBO = "combo"
     DEAL_TYPE_OTHER = "other"
     
     DEAL_TYPE_CHOICES = [
         (DEAL_TYPE_TWO_FOR_ONE, "2-for-1"),
         (DEAL_TYPE_PERCENTAGE, "Percentage Discount"),
         (DEAL_TYPE_FIXED, "Fixed Discount"),
+        (DEAL_TYPE_COMBO, "Combo Deal"),
         (DEAL_TYPE_OTHER, "Other"),
     ]
     
@@ -278,6 +280,7 @@ class Deal(TimeStampedModel, SoftDeleteModel):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    short_description = models.CharField(max_length=50, blank=True, null=True, help_text="Two-word description (e.g. Save Today)")
     deal_type = models.CharField(max_length=20, choices=DEAL_TYPE_CHOICES, default=DEAL_TYPE_PERCENTAGE)
     
     # Deal details
@@ -293,6 +296,13 @@ class Deal(TimeStampedModel, SoftDeleteModel):
         null=True,
         blank=True,
         help_text="Fixed discount amount"
+    )
+    combo_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Fixed price for the combo"
     )
     minimum_spend = models.DecimalField(
         max_digits=10,

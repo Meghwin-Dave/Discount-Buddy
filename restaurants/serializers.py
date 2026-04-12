@@ -341,8 +341,8 @@ class DealSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deal
         fields = (
-            "id", "restaurant", "title", "description", "deal_type",
-            "discount_percentage", "discount_amount", "minimum_spend",
+            "id", "restaurant", "title", "description", "short_description", "deal_type",
+            "discount_percentage", "discount_amount", "combo_price", "minimum_spend",
             "terms_and_conditions", "start_date", "end_date",
             "max_uses", "used_count", "max_per_user", "is_featured",
             "images", "is_active", "can_use", "is_saved", "created_at"
@@ -379,9 +379,9 @@ class DealListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deal
         fields = (
-            "id", "restaurant_id", "title", "description", "deal_type", "restaurant_name",
+            "id", "restaurant_id", "title", "description", "short_description", "deal_type", "restaurant_name",
             "restaurant_slug", "city_name", "discount_percentage",
-            "discount_amount", "minimum_spend", "terms_and_conditions",
+            "discount_amount", "combo_price", "minimum_spend", "terms_and_conditions",
             "start_date", "end_date", "max_per_user", "latitude", "longitude", "distance_miles",
             "is_featured", "primary_image", "is_active", "created_at"
         )
@@ -410,7 +410,7 @@ class HomeScreenDealSerializer(serializers.ModelSerializer):
     class Meta:
         model = Deal
         fields = (
-            "id", "title", "type", "discount_percentage",
+            "id", "title", "short_description", "type", "discount_percentage", "combo_price",
             "minimum_spend", "start_date", "end_date", "restaurant_id"
         )
 
