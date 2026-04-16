@@ -147,6 +147,14 @@ class RestaurantSerializer(serializers.ModelSerializer):
     )
     images = RestaurantImageSerializer(many=True, read_only=True)
     facilities = FacilitySerializer(many=True, read_only=True)
+    facility_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Facility.objects.all(),
+        source='facilities',
+        many=True,
+        write_only=True,
+        required=False,
+        help_text="List of facility IDs"
+    )
     active_deals_count = serializers.IntegerField(read_only=True)
     is_saved = serializers.SerializerMethodField()
     is_favourite = serializers.SerializerMethodField()
@@ -156,7 +164,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "city", "city_id", "address", "postcode",
             "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
-            "cuisine_ids", "cuisines",
+            "cuisine_ids", "cuisines", "facility_ids",
             "price_range", "occupancy", "verified", "is_featured", "opening_hours",
             "menu_type", "images", "active_deals_count", "is_saved", "is_favourite", "facilities", "created_at"
         )
@@ -191,12 +199,15 @@ class RestaurantSerializer(serializers.ModelSerializer):
         # Handle categories if provided
         categories = validated_data.pop('categories', [])
         cuisines = validated_data.pop('cuisines', [])
+        facilities = validated_data.pop('facilities', [])
         restaurant = Restaurant.objects.create(**validated_data)
         
         if categories:
             restaurant.categories.set(categories)
         if cuisines:
             restaurant.cuisines.set(cuisines)
+        if facilities:
+            restaurant.facilities.set(facilities)
         
         return restaurant
     
@@ -204,6 +215,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         # Handle categories if provided
         categories = validated_data.pop('categories', None)
         cuisines = validated_data.pop('cuisines', None)
+        facilities = validated_data.pop('facilities', None)
         
         # Auto-update slug if name changed
         if 'name' in validated_data and validated_data['name'] != instance.name:
@@ -225,6 +237,8 @@ class RestaurantSerializer(serializers.ModelSerializer):
             instance.categories.set(categories)
         if cuisines is not None:
             instance.cuisines.set(cuisines)
+        if facilities is not None:
+            instance.facilities.set(facilities)
         
         return instance
 
@@ -242,6 +256,8 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     is_favourite = serializers.SerializerMethodField()
     active_deals = serializers.SerializerMethodField()
     cuisines = CuisineSerializer(many=True, read_only=True)
+    facilities = FacilitySerializer(many=True, read_only=True)
+    categories = RestaurantCategorySerializer(many=True, read_only=True)
 
     
     class Meta:
@@ -250,7 +266,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
-            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "is_favourite", "active_deals", "cuisines"
+            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "categories", "is_favourite", "active_deals", "cuisines"
         )
 
         
