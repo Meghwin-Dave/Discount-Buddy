@@ -12,6 +12,9 @@ from .views import (
     DeleteAccountInitView,
     DeleteAccountView,
     LogoutView,
+    PasswordResetRequestView,
+    PasswordResetVerifyOTPView,
+    PasswordResetConfirmView,
 )
 
 urlpatterns = [
@@ -30,6 +33,9 @@ urlpatterns = [
     path("oauth", SocialLoginView.as_view(), name="social_login"),
     path("account-delete/init", DeleteAccountInitView.as_view(), name="account-delete-init"),
     path("account-delete", DeleteAccountView.as_view(), name="account-delete"),
+    path("password-reset/request", PasswordResetRequestView.as_view(), name="password-reset-request"),
+    path("password-reset/verify", PasswordResetVerifyOTPView.as_view(), name="password-reset-verify"),
+    path("password-reset/confirm", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
 ]
 
 

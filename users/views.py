@@ -17,7 +17,7 @@ import jwt
 import requests
 from jwt.algorithms import RSAAlgorithm
 
-from .models import UserProfile, RegistrationOTP
+from .models import UserProfile, RegistrationOTP, PasswordResetOTP
 from .serializers import (
     RegisterSerializer,
     UserSerializer,
@@ -26,6 +26,8 @@ from .serializers import (
     RegisterCompleteSerializer,
     VerifyOTPSerializer,
     UserUpdateSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer,
 )
 
 User = get_user_model()
@@ -489,3 +491,162 @@ class LogoutView(APIView):
                 {"detail": "Invalid refresh token or token already blacklisted."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class PasswordResetRequestView(APIView):
+    """
+    Step 1: Accept email and send a 4-digit OTP for password reset.
+    """
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        # Invalidate previous pending reset OTPs for this email.
+        PasswordResetOTP.objects.filter(email=email, is_verified=False).update(
+            is_verified=True, verified_at=timezone.now()
+        )
+
+        # Generate a 4-digit numeric OTP.
+        otp_code = f"{random.randint(0, 9999):04d}"
+        expires_at = timezone.now() + timedelta(minutes=10)
+
+        PasswordResetOTP.objects.create(
+            email=email,
+            otp_code=otp_code,
+            expires_at=expires_at,
+        )
+
+        from_email = settings.DEFAULT_FROM_EMAIL
+        subject = "Password Reset OTP - Discount Buddy"
+        message = f"Your verification code for password reset is {otp_code}. It expires in 10 minutes. If you did not request this, please ignore this email."
+
+        # Send email asynchronously to improve response time
+        def send_otp_email():
+            try:
+                send_mail(subject, message, from_email, [email], fail_silently=False)
+            except Exception:
+                # Log the error if possible
+                pass
+
+        threading.Thread(target=send_otp_email).start()
+
+        return Response(
+            {"detail": "Reset code sent to your email."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetVerifyOTPView(APIView):
+    """
+    Optional Step 2: Verify the 4-digit OTP separately.
+    """
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = VerifyOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        otp = serializer.validated_data["otp"]
+
+        otp_obj = (
+            PasswordResetOTP.objects.filter(email=email, is_verified=False, otp_code=otp)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not otp_obj:
+            return Response(
+                {"detail": "Invalid or expired verification code."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if otp_obj.is_expired:
+            return Response(
+                {"detail": "Verification code has expired."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Mark OTP as verified so confirm step knows it's valid
+        otp_obj.is_verified = True
+        otp_obj.verified_at = timezone.now()
+        otp_obj.save(update_fields=["is_verified", "verified_at", "updated_at"])
+
+        return Response(
+            {"detail": "OTP verified successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(APIView):
+    """
+    Step 3: Verify OTP and reset password.
+    Supports both direct reset and following a verify-otp step.
+    """
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        otp = serializer.validated_data["otp"]
+        password = serializer.validated_data["password"]
+
+        # Check for a verified OTP first (from verify-otp step)
+        otp_obj = (
+            PasswordResetOTP.objects.filter(email=email, is_verified=True, otp_code=otp)
+            .order_by("-verified_at")
+            .first()
+        )
+
+        if not otp_obj:
+            # Fallback: check if it's currently unverified but valid
+            otp_obj = (
+                PasswordResetOTP.objects.filter(email=email, is_verified=False, otp_code=otp)
+                .order_by("-created_at")
+                .first()
+            )
+            
+            if not otp_obj:
+                return Response(
+                    {"detail": "Invalid or expired verification code."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if otp_obj.is_expired:
+                return Response(
+                    {"detail": "Verification code has expired."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Mark it as verified now
+            otp_obj.is_verified = True
+            otp_obj.verified_at = timezone.now()
+            otp_obj.save(update_fields=["is_verified", "verified_at", "updated_at"])
+
+        # Reset Password
+        try:
+            user = User.objects.get(email=email)
+            user.set_password(password)
+            user.save()
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "User not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            {"detail": "Password has been reset successfully."},
+            status=status.HTTP_200_OK,
+        )

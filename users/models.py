@@ -66,3 +66,27 @@ class RegistrationOTP(TimeStampedModel):
     def is_expired(self) -> bool:
         return timezone.now() > self.expires_at
 
+
+class PasswordResetOTP(TimeStampedModel):
+    """
+    Temporary record used for password reset OTP verification.
+    """
+
+    email = models.EmailField(db_index=True)
+    otp_code = models.CharField(max_length=4)
+    is_verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["email", "is_verified", "otp_code", "expires_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Reset OTP for {self.email} ({'verified' if self.is_verified else 'pending'})"
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() > self.expires_at
+

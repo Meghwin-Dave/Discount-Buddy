@@ -159,3 +159,33 @@ class VerifyOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=4)
 
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """
+    Serializer to request a password reset OTP.
+    """
+
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        User = get_user_model()
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("No user found with this email address.")
+        return value
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """
+    Serializer to confirm password reset using OTP.
+    """
+
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=4)
+    password = serializers.CharField(write_only=True, min_length=6)
+    confirm_password = serializers.CharField(write_only=True, min_length=6)
+
+    def validate(self, data):
+        if data.get("password") != data.get("confirm_password"):
+            raise serializers.ValidationError({"password": "Passwords do not match."})
+        return data
+

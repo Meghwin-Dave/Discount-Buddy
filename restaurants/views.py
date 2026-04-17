@@ -197,7 +197,7 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
             raise NotFound(f"No restaurant found with {self.lookup_field} or ID: {lookup_value}")
     
     def get_serializer_class(self):
-        if self.action == "list":
+        if self.action in ["list", "nearby", "discount_buddy"]:
             return RestaurantListSerializer
         return RestaurantDetailSerializer
     
