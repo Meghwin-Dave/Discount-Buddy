@@ -263,7 +263,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Restaurant
         fields = (
-            "id", "name", "slug", "city_name", "country_name",
+            "id", "name", "slug", "description", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
             "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "categories", "is_favourite", "active_deals", "cuisines"
