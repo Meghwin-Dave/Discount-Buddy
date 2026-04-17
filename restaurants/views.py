@@ -175,6 +175,26 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ["name", "description", "address", "city__name", "cuisines__name"]
     ordering_fields = ["name", "created_at", "is_featured"]
     ordering = ["-is_featured", "-created_at"]
+    lookup_field = "slug"
+
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = self.kwargs[lookup_url_kwarg]
+
+        # Try to lookup by ID if numeric
+        if str(lookup_value).isdigit():
+            try:
+                return queryset.get(pk=lookup_value)
+            except (Restaurant.DoesNotExist, ValueError):
+                pass
+        
+        # Default to lookup by slug
+        filter_kwargs = {self.lookup_field: lookup_value}
+        try:
+            return queryset.get(**filter_kwargs)
+        except Restaurant.DoesNotExist:
+            raise NotFound(f"No restaurant found with {self.lookup_field} or ID: {lookup_value}")
     
     def get_serializer_class(self):
         if self.action == "list":
@@ -226,7 +246,7 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         radius_miles = min(float(self.request.query_params.get("radius", 100)), 100.0)
         radius_km = radius_miles * 1.60934
         
-        if lat and lon:
+        if lat and lon and self.action in ["list", "nearby", "discount_buddy"]:
             try:
                 lat = float(lat)
                 lon = float(lon)
@@ -359,6 +379,11 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 {"error": "Invalid latitude or longitude"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Invalid latitude or longitude"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         # Convert radius from miles to km for calculations
         radius_km = radius_miles * 1.60934
@@ -415,6 +440,71 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         restaurants = [r[0] for r in restaurants_with_distance]
         
         serializer = RestaurantListSerializer(restaurants, many=True, context={"request": request})
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path="discount-buddy")
+    def discount_buddy(self, request):
+        """
+        Custom action for the Discount-Buddy app.
+        Returns restaurants with active deals, filtered by proximity if coordinates are provided.
+        """
+        lat = request.query_params.get("latitude")
+        lon = request.query_params.get("longitude")
+        
+        # Get baseline queryset with annotations
+        queryset = self.get_queryset().filter(
+            active_deals_count__gt=0
+        )
+        
+        if lat and lon:
+            try:
+                lat_float = float(lat)
+                lon_float = float(lon)
+                # Use standard nearby radius or default to 50 miles
+                radius_miles = float(request.query_params.get("radius", 50))
+                radius_km = radius_miles * 1.60934
+                
+                # Bounding box filter
+                lat_delta = radius_km / 111.0
+                lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat_float))))
+                
+                queryset = queryset.filter(
+                    latitude__gte=lat_float - lat_delta,
+                    latitude__lte=lat_float + lat_delta,
+                    longitude__gte=lon_float - lon_delta,
+                    longitude__lte=lon_float + lon_delta
+                )
+                
+                # Full distance calculation for results
+                results = []
+                for restaurant in queryset:
+                    if restaurant.latitude and restaurant.longitude:
+                        dist_km = calculate_distance(lat_float, lon_float, float(restaurant.latitude), float(restaurant.longitude))
+                        if dist_km and dist_km <= radius_km:
+                            restaurant._distance_miles = km_to_miles(dist_km)
+                            results.append(restaurant)
+                
+                # Sort by distance
+                results.sort(key=lambda x: getattr(x, '_distance_miles', float('inf')))
+                
+                page = self.paginate_queryset(results)
+                if page is not None:
+                    serializer = self.get_serializer(page, many=True)
+                    return self.get_paginated_response(serializer.data)
+                
+                serializer = self.get_serializer(results, many=True)
+                return Response(serializer.data)
+                
+            except (ValueError, TypeError):
+                pass
+        
+        # If no coordinates or error, return default ordered list
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+            
+        serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
 
