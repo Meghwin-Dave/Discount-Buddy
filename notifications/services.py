@@ -317,6 +317,66 @@ class NotificationService:
         return count
 
     @staticmethod
+    def notify_merchant_booking_cancelled(booking) -> int:
+        """
+        Notify restaurant owner(s) when a customer cancels their booking.
+
+        Args:
+            booking: Booking instance (status CANCELLED)
+
+        Returns:
+            Number of notifications created
+        """
+        restaurant = booking.restaurant
+        owners = NotificationService._get_restaurant_owners(restaurant)
+
+        if not owners:
+            return 0
+
+        # Ensure booking_date is formatted safely
+        try:
+            if isinstance(booking.booking_date, str):
+                from django.utils.dateparse import parse_datetime
+                dt_obj = parse_datetime(booking.booking_date)
+                booking_date_str = dt_obj.strftime('%B %d, %Y at %I:%M %p') if dt_obj else booking.booking_date
+            else:
+                booking_date_str = booking.booking_date.strftime('%B %d, %Y at %I:%M %p')
+        except Exception:
+            booking_date_str = str(booking.booking_date)
+
+        customer_name = booking.contact_name or (booking.user.get_full_name() if booking.user else None) or (booking.user.email if booking.user else "A customer")
+        
+        title = "Table Booking Cancelled ❌"
+        message = (
+            f"{customer_name} has cancelled their booking for {booking.number_of_guests} guest(s) "
+            f"at {restaurant.name} on {booking_date_str}."
+        )
+
+        payload = {
+            "booking_id": str(booking.id),
+            "restaurant_id": str(restaurant.id),
+            "customer_name": customer_name,
+            "number_of_guests": booking.number_of_guests,
+            "booking_date": booking_date_str,
+            "status": "CANCELLED",
+        }
+
+        count = 0
+        for owner in owners:
+            NotificationService.create_notification(
+                user=owner,
+                title=title,
+                message=message,
+                notification_type="BOOKING_CANCELLED",
+                payload=payload,
+                source_id=booking.id,
+                source_type="booking",
+            )
+            count += 1
+
+        return count
+
+    @staticmethod
     def notify_merchant_deal_redeemed(deal_use) -> int:
         """
         Notify restaurant owner(s) when a customer successfully redeems a deal

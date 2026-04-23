@@ -1205,6 +1205,13 @@ class BookingViewSet(viewsets.ModelViewSet):
         booking.status = Booking.STATUS_CANCELLED
         booking.save(update_fields=["status"])
         
+        # Notify merchant about cancellation
+        try:
+            from notifications.services import NotificationService
+            NotificationService.notify_merchant_booking_cancelled(booking)
+        except Exception:
+            pass
+            
         return Response(
             {"detail": "Booking cancelled successfully"},
             status=status.HTTP_200_OK

@@ -19,6 +19,7 @@ class Notification(TimeStampedModel):
         ("SYSTEM", "System"),
         # --- Merchant-facing ---
         ("NEW_BOOKING", "New Booking Request"),
+        ("BOOKING_CANCELLED", "Booking Cancelled"),
         ("MERCHANT_DEAL_REDEEMED", "Deal Redeemed at Your Restaurant"),
         ("MILESTONE_EARNINGS", "Earnings Milestone Reached"),
         ("NEW_REVIEW", "New Customer Review"),
