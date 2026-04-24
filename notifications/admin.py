@@ -88,6 +88,7 @@ class DeviceTokenAdmin(admin.ModelAdmin):
         "id",
         "user",
         "device_type",
+        "device_id",
         "token_preview",
         "is_active",
         "created_at",
@@ -100,6 +101,7 @@ class DeviceTokenAdmin(admin.ModelAdmin):
     search_fields = [
         "user__email",
         "user__username",
+        "device_id",
         "token",
     ]
     readonly_fields = [

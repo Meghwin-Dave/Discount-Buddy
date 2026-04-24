@@ -60,24 +60,44 @@ def send_push_notification(notification_id: str):
         
         for device_token in device_tokens:
             try:
-                sent = send_fcm_message(
+                sent, error = send_fcm_message(
                     token=device_token.token,
                     title=notification.title,
                     body=notification.message,
                     data=notification.payload or {}
                 )
+                
                 if sent:
                     success_count += 1
                     print(f"✅ [Task] Push sent to {device_token.user.email} ({device_token.device_type})")
                 else:
                     error_count += 1
-                    print(f"❌ [Task] Push FAILED for {device_token.user.email} (send_fcm_message returned False)")
+                    error_msg = str(error) if error else "Unknown error"
+                    print(f"❌ [Task] Push FAILED for {device_token.user.email}: {error_msg}")
+                    
+                    # If token is invalid/unregistered, deactivate it
+                    if error:
+                        from firebase_admin import messaging
+                        # These errors indicate the token is no longer valid
+                        is_stale = isinstance(error, (messaging.UnregisteredError, messaging.SenderIdMismatchError))
+                        
+                        # Also check by code string if the class check fails or for other specific cases
+                        error_code = getattr(error, 'code', None)
+                        if not is_stale and error_code in ['registration-token-not-registered', 'invalid-argument']:
+                            is_stale = True
+                            
+                        if is_stale:
+                            device_token.is_active = False
+                            device_token.save(update_fields=["is_active", "updated_at"])
+                            print(f"⚠️ [Task] Deactivated stale token for {device_token.user.email}")
+                            logger.info(f"Deactivated stale token for user {device_token.user.email}")
+
             except Exception as e:
                 error_count += 1
                 logger.error(
-                    f"Failed to send push to token {device_token.token[:20]}...: {str(e)}"
+                    f"Failed to handle push for token {device_token.token[:20]}...: {str(e)}"
                 )
-                print(f"❌ [Task] Push failed for {device_token.user.email}: {e}")
+                print(f"❌ [Task] Unexpected error for {device_token.user.email}: {e}")
         
         logger.info(
             f"Push notification sent for notification {notification_id}: "
@@ -115,13 +135,23 @@ def send_bulk_push_notifications(notification_ids: List[str]):
             
             for device_token in device_tokens:
                 try:
-                    send_fcm_message(
+                    sent, error = send_fcm_message(
                         token=device_token.token,
                         title=notification.title,
                         body=notification.message,
                         data=notification.payload or {}
                     )
-                    total_sent += 1
+                    
+                    if sent:
+                        total_sent += 1
+                    elif error:
+                        total_errors += 1
+                        # Deactivate stale tokens in bulk flow too
+                        from firebase_admin import messaging
+                        if isinstance(error, (messaging.UnregisteredError, messaging.SenderIdMismatchError)):
+                            device_token.is_active = False
+                            device_token.save(update_fields=["is_active", "updated_at"])
+                            logger.info(f"Deactivated stale token in bulk flow for {device_token.user.email}")
                 except Exception as e:
                     total_errors += 1
                     logger.error(

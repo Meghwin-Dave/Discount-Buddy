@@ -68,11 +68,13 @@ class DeviceToken(TimeStampedModel):
         ],
         default="android"
     )
+    device_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         indexes = [
             models.Index(fields=["user", "is_active"]),
+            models.Index(fields=["device_id"]),
         ]
 
     def __str__(self):

@@ -117,7 +117,7 @@ def send_fcm_message(
         if initialize_firebase() is None:
             logger.warning("Firebase not initialized, skipping push notification")
             print("⚠️ [FCM] Firebase not initialized, skipping push notification")
-            return False
+            return False, None
         
         from firebase_admin import messaging
         
@@ -144,12 +144,25 @@ def send_fcm_message(
         response = messaging.send(message)
         logger.info(f"Successfully sent FCM message: {response}")
         print(f"✅ [FCM] Successfully sent FCM message. Response ID: {response}")
-        return True
+        return True, None
         
     except Exception as e:
+        error_code = None
+        # Handle specific Firebase errors
+        try:
+            from firebase_admin import _messaging_utils
+            if hasattr(e, 'code'):
+                error_code = e.code
+            elif hasattr(e, 'cause') and hasattr(e.cause, 'code'):
+                error_code = e.cause.code
+        except ImportError:
+            pass
+
         logger.error(f"Failed to send FCM message: {str(e)}")
-        print(f"❌ [FCM] Failed to send FCM message: {str(e)}")
-        return False
+        print(f"❌ [FCM] Failed to send FCM message: {str(e)} (Code: {error_code})")
+        
+        # Return False and the error code/exception to let caller decide what to do
+        return False, e
 
 
 def send_fcm_multicast(
