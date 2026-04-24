@@ -58,13 +58,25 @@ def send_push_notification(notification_id: str):
         success_count = 0
         error_count = 0
         
+        # Prepare data payload with notification metadata
+        fcm_data = (notification.payload or {}).copy()
+        fcm_data.update({
+            "notification_id": str(notification.id),
+            "notification_type": notification.notification_type,
+        })
+        
+        if notification.source_id:
+            fcm_data["source_id"] = str(notification.source_id)
+        if notification.source_type:
+            fcm_data["source_type"] = notification.source_type
+
         for device_token in device_tokens:
             try:
                 sent, error = send_fcm_message(
                     token=device_token.token,
                     title=notification.title,
                     body=notification.message,
-                    data=notification.payload or {}
+                    data=fcm_data
                 )
                 
                 if sent:
@@ -133,13 +145,25 @@ def send_bulk_push_notifications(notification_ids: List[str]):
         for notification in notifications:
             device_tokens = notification.user.device_tokens.filter(is_active=True)
             
+            # Prepare data payload with notification metadata
+            fcm_data = (notification.payload or {}).copy()
+            fcm_data.update({
+                "notification_id": str(notification.id),
+                "notification_type": notification.notification_type,
+            })
+            
+            if notification.source_id:
+                fcm_data["source_id"] = str(notification.source_id)
+            if notification.source_type:
+                fcm_data["source_type"] = notification.source_type
+
             for device_token in device_tokens:
                 try:
                     sent, error = send_fcm_message(
                         token=device_token.token,
                         title=notification.title,
                         body=notification.message,
-                        data=notification.payload or {}
+                        data=fcm_data
                     )
                     
                     if sent:
