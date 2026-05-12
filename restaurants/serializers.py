@@ -420,6 +420,40 @@ class DealListSerializer(serializers.ModelSerializer):
         return obj.is_active_now()
 
 
+class DealToggleStatusSerializer(serializers.Serializer):
+    """Serializer for toggling deal status with optional date updates"""
+    start_date = serializers.DateTimeField(required=False, allow_null=True)
+    end_date = serializers.DateTimeField(required=False, allow_null=True)
+    
+    def validate(self, data):
+        from django.utils import timezone
+        
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        
+        if start_date and end_date:
+            if start_date >= end_date:
+                raise serializers.ValidationError(
+                    "Start date must be before end date."
+                )
+            if end_date <= timezone.now():
+                raise serializers.ValidationError(
+                    "End date must be in the future."
+                )
+        elif start_date and not end_date:
+            if start_date <= timezone.now():
+                raise serializers.ValidationError(
+                    "Start date must be in the future."
+                )
+        elif end_date and not start_date:
+            if end_date <= timezone.now():
+                raise serializers.ValidationError(
+                    "End date must be in the future."
+                )
+        
+        return data
+
+
 class HomeScreenDealSerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="deal_type")
 

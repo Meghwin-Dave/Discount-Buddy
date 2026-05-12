@@ -45,6 +45,7 @@ from .serializers import (
     RestaurantSerializer,
     RestaurantListSerializer,
     DealSerializer,
+    DealToggleStatusSerializer,
     DealListSerializer,
     SavedRestaurantSerializer,
     SavedDealSerializer,
@@ -785,21 +786,94 @@ class MerchantDealViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def toggle_status(self, request, pk=None):
-        """Toggle the is_active status of a deal."""
+        """
+        Toggle the is_active status of a deal with optional date updates.
+        
+        Request body (optional):
+        {
+            "start_date": "2026-05-15T10:00:00Z",  # Optional
+            "end_date": "2026-06-15T23:59:59Z"     # Optional
+        }
+        
+        Returns:
+        {
+            "success": True,
+            "is_active": True/False,
+            "deal": {...},  # Updated deal details
+            "detail": "Deal activated/deactivated successfully.",
+            "warnings": [...]  # If any date-related warnings
+        }
+        """
         deal = self.get_object()
+        
+        # Validate and parse request data
+        serializer = DealToggleStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        start_date = serializer.validated_data.get('start_date')
+        end_date = serializer.validated_data.get('end_date')
+        
+        warnings = []
+        
+        # If dates are provided, update them
+        if start_date or end_date:
+            # Use existing dates if not provided
+            new_start = start_date or deal.start_date
+            new_end = end_date or deal.end_date
+            
+            # Check if deal is being activated with past end_date
+            if end_date and deal.is_active is False:  # User is activating deal
+                now = timezone.now()
+                if new_end <= now:
+                    return Response({
+                        "success": False,
+                        "detail": "Cannot activate deal: end date must be in the future.",
+                        "error_code": "INVALID_END_DATE"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            deal.start_date = new_start
+            deal.end_date = new_end
+            
+            # If deal is currently inactive and dates are updated, inform user
+            if not deal.is_active and (start_date or end_date):
+                warnings.append("Deal dates updated. Deal will still be inactive until toggled on.")
+        
+        # Toggle active status
         deal.is_active = not deal.is_active
-        deal.save(update_fields=["is_active", "updated_at"])
+        
+        # Validate deal can be active
+        if deal.is_active:
+            now = timezone.now()
+            if deal.end_date <= now:
+                return Response({
+                    "success": False,
+                    "detail": "Cannot activate deal: deal's end date has passed.",
+                    "error_code": "EXPIRED_DEAL"
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if deal.start_date > now:
+                warnings.append(f"Deal will become active from {deal.start_date.isoformat()}")
+        
+        # Save the deal
+        deal.save(update_fields=["is_active", "start_date", "end_date", "updated_at"])
         
         # Invalidate active deals cache
-        from django.core.cache import cache
-        from django.utils import timezone
         cache.delete(f"active_deals_{timezone.now().date()}")
         
-        return Response({
-            "success": True, 
+        # Serialize the updated deal
+        deal_serializer = DealSerializer(deal, context={"request": request})
+        
+        response_data = {
+            "success": True,
             "is_active": deal.is_active,
-            "detail": f"Deal {'activated' if deal.is_active else 'deactivated'} successfully."
-        })
+            "deal": deal_serializer.data,
+            "detail": f"Deal {'activated' if deal.is_active else 'deactivated'} successfully.",
+        }
+        
+        if warnings:
+            response_data["warnings"] = warnings
+        
+        return Response(response_data)
 
 
 
