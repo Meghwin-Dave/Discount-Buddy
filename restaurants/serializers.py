@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .opening_hours_sync import sync_opening_slots_from_opening_hours
 from .models import (
     Country,
     City,
@@ -209,9 +210,13 @@ class RestaurantSerializer(serializers.ModelSerializer):
         if facilities:
             restaurant.facilities.set(facilities)
         
+        if restaurant.opening_hours:
+            sync_opening_slots_from_opening_hours(restaurant)
+        
         return restaurant
     
     def update(self, instance, validated_data):
+        opening_hours_updated = "opening_hours" in validated_data
         # Handle categories if provided
         categories = validated_data.pop('categories', None)
         cuisines = validated_data.pop('cuisines', None)
@@ -239,6 +244,9 @@ class RestaurantSerializer(serializers.ModelSerializer):
             instance.cuisines.set(cuisines)
         if facilities is not None:
             instance.facilities.set(facilities)
+        
+        if opening_hours_updated:
+            sync_opening_slots_from_opening_hours(instance)
         
         return instance
 

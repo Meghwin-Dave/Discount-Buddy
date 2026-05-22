@@ -23,6 +23,7 @@ from .models import (
     Facility,
 )
 from wallet.models import Wallet, WalletTransaction
+from .opening_hours_sync import sync_opening_slots_from_opening_hours
 
 @admin.register(Country)
 class CountryAdmin(admin.ModelAdmin):
@@ -108,6 +109,11 @@ class RestaurantAdmin(admin.ModelAdmin):
             "fields": ("verified", "is_featured", "is_active")
         }),
     )
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if obj.opening_hours:
+            sync_opening_slots_from_opening_hours(obj)
 
     def last_mystery_visit_date(self, obj):
         visit = (
