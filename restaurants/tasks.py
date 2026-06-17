@@ -5,7 +5,7 @@ from django.db.models import Max
 from django.utils import timezone
 
 from users.models import UserProfile
-from .models import Restaurant, MysteryVisit
+from .models import Restaurant, MysteryVisit, Booking
 
 
 @shared_task
@@ -57,4 +57,37 @@ def assign_monthly_mystery_visits():
             mystery_guest=guest,
             scheduled_for=scheduled_for,
         )
+
+
+@shared_task
+def send_booking_reminders():
+    """
+    Send 1-hour reminders to merchants for upcoming confirmed bookings.
+
+    Runs periodically (every 5 minutes) and targets bookings whose
+    booking_date falls between 50 and 60 minutes from now.
+    """
+    from notifications.services import NotificationService
+
+    now = timezone.now()
+    window_start = now + timedelta(minutes=50)
+    window_end = now + timedelta(minutes=60)
+
+    bookings = (
+        Booking.objects.filter(
+            status=Booking.STATUS_CONFIRMED,
+            reminder_sent=False,
+            booking_date__gte=window_start,
+            booking_date__lte=window_end,
+        )
+        .select_related("restaurant", "user")
+    )
+
+    for booking in bookings:
+        try:
+            NotificationService.notify_merchant_booking_reminder(booking)
+            booking.reminder_sent = True
+            booking.save(update_fields=["reminder_sent", "updated_at"])
+        except Exception:
+            continue
 

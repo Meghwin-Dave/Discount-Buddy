@@ -377,6 +377,60 @@ class NotificationService:
         return count
 
     @staticmethod
+    def notify_merchant_booking_reminder(booking) -> int:
+        """
+        Notify restaurant owner(s) 1 hour before a confirmed booking.
+
+        Args:
+            booking: Booking instance (status CONFIRMED)
+
+        Returns:
+            Number of notifications created
+        """
+        restaurant = booking.restaurant
+        owners = NotificationService._get_restaurant_owners(restaurant)
+
+        if not owners:
+            return 0
+
+        customer_name = (
+            booking.contact_name
+            or (booking.user.get_full_name() if booking.user else None)
+            or (booking.user.email if booking.user else "A customer")
+        )
+
+        title = "Upcoming Booking Reminder"
+        message = (
+            f"Booking for customer '{customer_name}' "
+            f"({booking.number_of_guests} guests) starts in 1 hour."
+        )
+
+        payload = {
+            "click_action": "FLUTTER_NOTIFICATION_CLICK",
+            "type": "merchant_reminder",
+            "booking_id": str(booking.id),
+            "restaurant_id": str(restaurant.id),
+            "customer_name": customer_name,
+            "number_of_guests": str(booking.number_of_guests),
+            "booking_date": booking.booking_date.isoformat(),
+        }
+
+        count = 0
+        for owner in owners:
+            NotificationService.create_notification(
+                user=owner,
+                title=title,
+                message=message,
+                notification_type="BOOKING_REMINDER",
+                payload=payload,
+                source_id=booking.id,
+                source_type="booking",
+            )
+            count += 1
+
+        return count
+
+    @staticmethod
     def notify_merchant_deal_redeemed(deal_use) -> int:
         """
         Notify restaurant owner(s) when a customer successfully redeems a deal

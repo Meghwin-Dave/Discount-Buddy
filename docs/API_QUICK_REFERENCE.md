@@ -56,7 +56,9 @@ Header: Authorization: Bearer <access_token>
 | 5a. Add Menu Item | POST | `/merchant/api/restaurants/restaurant/menu-items/` | Yes |
 | 6. Create Deal | POST | `/merchant/api/restaurants/merchant/deals/` | Yes |
 | 7. View Reviews | GET | `/merchant/api/restaurants/restaurant/reviews/` | Yes |
-| 8. View Bookings | GET | `/merchant/api/restaurants/restaurant/bookings/` | Yes |
+| 8. View Bookings | GET | `/merchant/api/restaurants/restaurant/bookings` | Yes |
+| 8a. Mark Arrived | POST/PATCH | `/merchant/api/restaurants/restaurant/bookings/{id}/arrive` | Yes |
+| 8b. Mark No-Show | POST/PATCH | `/merchant/api/restaurants/restaurant/bookings/{id}/no-show` | Yes |
 
 ---
 
@@ -108,7 +110,11 @@ Header: Authorization: Bearer <access_token>
 - `GET /merchant/api/restaurants/merchant/deals/` - List deals
 - `POST /merchant/api/restaurants/merchant/deals/` - Create deal
 - `GET /merchant/api/restaurants/restaurant/reviews/` - View reviews
-- `GET /merchant/api/restaurants/restaurant/bookings/` - View bookings
+- `GET /merchant/api/restaurants/restaurant/bookings` - View bookings (calendar; `?start_date=&end_date=&restaurant_id=`)
+- `POST /merchant/api/restaurants/restaurant/bookings/{id}/arrive` - Mark guest arrived
+- `POST /merchant/api/restaurants/restaurant/bookings/{id}/no-show` - Mark no-show
+
+> **Full merchant booking guide:** see `docs/MERCHANT_BOOKING_API.md`
 
 ---
 

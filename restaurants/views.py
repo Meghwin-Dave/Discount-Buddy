@@ -58,6 +58,11 @@ from .serializers import (
     BookingSerializer,
     BookingCreateSerializer,
     BookingManagementSerializer,
+    MerchantBookingListSerializer,
+    BookingArriveSerializer,
+    BookingNoShowSerializer,
+    BookingArriveResponseSerializer,
+    BookingNoShowResponseSerializer,
     MenuCategorySerializer,
     MenuItemSerializer,
     MenuItemCreateSerializer,
@@ -1607,11 +1612,13 @@ class RestaurantBookingsManagementViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action in ["update", "partial_update"]:
             return BookingManagementSerializer
+        if self.action in ["list", "retrieve"]:
+            return MerchantBookingListSerializer
         return BookingSerializer
     filterset_fields = ["status"]
     ordering_fields = ["booking_date"]
     ordering = ["-booking_date"]
-    http_method_names = ["get", "patch", "head", "options"]
+    http_method_names = ["get", "patch", "head", "options", "post"]
     
     def get_queryset(self):
         # Get bookings for user's restaurants
@@ -1625,7 +1632,7 @@ class RestaurantBookingsManagementViewSet(viewsets.ModelViewSet):
                 restaurant_ids = list(
                     Restaurant.objects.filter(merchant=merchant).values_list("id", flat=True)
                 )
-        except:
+        except Exception:
             pass
         
         queryset = Booking.objects.filter(
@@ -1636,8 +1643,58 @@ class RestaurantBookingsManagementViewSet(viewsets.ModelViewSet):
         restaurant_id = self.request.query_params.get('restaurant_id')
         if restaurant_id and restaurant_id != 'all':
             queryset = queryset.filter(restaurant_id=restaurant_id)
+
+        start_date = self.request.query_params.get("start_date")
+        end_date = self.request.query_params.get("end_date")
+        if start_date:
+            queryset = queryset.filter(booking_date__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(booking_date__date__lte=end_date)
             
         return queryset
+
+    def _validate_attendance_eligible(self, booking):
+        if booking.status in [Booking.STATUS_CANCELLED, Booking.STATUS_ARRIVED, Booking.STATUS_NO_SHOW]:
+            return f"Cannot update attendance for a booking with status '{booking.status}'."
+        if booking.status not in [Booking.STATUS_CONFIRMED, Booking.STATUS_PENDING]:
+            return f"Only confirmed or pending bookings can be marked for attendance (current: '{booking.status}')."
+        return None
+
+    @action(detail=True, methods=["post", "patch"], url_path="arrive")
+    def arrive(self, request, pk=None):
+        """Record that a guest has arrived."""
+        booking = self.get_object()
+        error = self._validate_attendance_eligible(booking)
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = BookingArriveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        arrival_time = serializer.validated_data.get("arrival_time") or timezone.now()
+
+        booking.status = Booking.STATUS_ARRIVED
+        booking.arrived_time = arrival_time
+        booking.save(update_fields=["status", "arrived_time", "updated_at"])
+
+        return Response(BookingArriveResponseSerializer(booking).data)
+
+    @action(detail=True, methods=["post", "patch"], url_path="no-show")
+    def no_show(self, request, pk=None):
+        """Record that a customer did not show up."""
+        booking = self.get_object()
+        error = self._validate_attendance_eligible(booking)
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = BookingNoShowSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        booking.status = Booking.STATUS_NO_SHOW
+        booking.no_show_reason = serializer.validated_data["no_show_reason"]
+        booking.no_show_notes = serializer.validated_data.get("no_show_notes", "")
+        booking.save(update_fields=["status", "no_show_reason", "no_show_notes", "updated_at"])
+
+        return Response(BookingNoShowResponseSerializer(booking).data)
 
 
 class DealRedemptionView(APIView):

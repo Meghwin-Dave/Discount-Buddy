@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 
 from .opening_hours_sync import sync_opening_slots_from_opening_hours
 from .models import (
@@ -652,7 +653,8 @@ class BookingSerializer(serializers.ModelSerializer):
             "booking_id", "restaurant_id", "restaurant_name", "restaurant_slug", "restaurant_city_name",
             "booking_date", "number_of_guests", "status",
             "special_requests", "contact_phone", "contact_name",
-            "can_cancel", "created_at"
+            "arrived_time", "no_show_reason", "no_show_notes",
+            "can_cancel", "created_at", "updated_at",
         )
         read_only_fields = ("user", "status")
         
@@ -704,13 +706,63 @@ class BookingCreateSerializer(serializers.ModelSerializer):
 
 class BookingManagementSerializer(BookingSerializer):
     """Serializer for merchants to manage bookings (allows status update)"""
-    
+
     class Meta:
         model = Booking
         fields = BookingSerializer.Meta.fields
-        read_only_fields = ("user",)  # Remove 'status' from read_only so it can be updated
+        read_only_fields = ("user",)
 
 
+class MerchantBookingListSerializer(serializers.ModelSerializer):
+    """Serializer for merchant calendar/list views."""
+
+    restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = (
+            "id",
+            "restaurant_name",
+            "contact_name",
+            "contact_phone",
+            "number_of_guests",
+            "booking_date",
+            "status",
+            "arrived_time",
+            "no_show_reason",
+            "no_show_notes",
+            "updated_at",
+        )
+
+
+class BookingArriveSerializer(serializers.Serializer):
+    arrival_time = serializers.DateTimeField(required=False)
+
+    def validate_arrival_time(self, value):
+        if value and value > timezone.now():
+            raise serializers.ValidationError("Arrival time cannot be in the future.")
+        return value
+
+
+class BookingNoShowSerializer(serializers.Serializer):
+    no_show_reason = serializers.CharField(max_length=255)
+    no_show_notes = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class BookingArriveResponseSerializer(serializers.ModelSerializer):
+    booking_id = serializers.IntegerField(source="id", read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = ("booking_id", "status", "arrived_time", "updated_at")
+
+
+class BookingNoShowResponseSerializer(serializers.ModelSerializer):
+    booking_id = serializers.IntegerField(source="id", read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = ("booking_id", "status", "no_show_reason", "no_show_notes", "updated_at")
 
 class MenuItemSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()

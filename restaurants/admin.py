@@ -235,8 +235,11 @@ class ReviewAdmin(admin.ModelAdmin):
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ("user", "restaurant", "booking_date", "number_of_guests", "status", "created_at")
-    list_filter = ("status", "booking_date", "created_at")
+    list_display = (
+        "user", "restaurant", "booking_date", "number_of_guests", "status",
+        "arrived_time", "reminder_sent", "created_at",
+    )
+    list_filter = ("status", "reminder_sent", "booking_date", "created_at")
     search_fields = ("user__email", "restaurant__name", "contact_name", "contact_phone")
     raw_id_fields = ("user", "restaurant")
     date_hierarchy = "booking_date"

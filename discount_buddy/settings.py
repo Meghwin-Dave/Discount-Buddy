@@ -354,5 +354,9 @@ CELERY_BEAT_SCHEDULE = {
         # Run daily at 03:00 UTC; logic in the task respects required_visit_gap
         "schedule": crontab(hour=3, minute=0),
     },
+    "send-booking-reminders": {
+        "task": "restaurants.tasks.send_booking_reminders",
+        "schedule": crontab(minute="*/5"),
+    },
 }
 

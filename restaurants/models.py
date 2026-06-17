@@ -545,14 +545,28 @@ class Booking(TimeStampedModel):
     STATUS_CONFIRMED = "confirmed"
     STATUS_CANCELLED = "cancelled"
     STATUS_COMPLETED = "completed"
-    
+    STATUS_ARRIVED = "arrived"
+    STATUS_NO_SHOW = "no_show"
+
+    NO_SHOW_REASON_NO_CALL = "no_show_no_call"
+    NO_SHOW_REASON_CANCELLED_LATE = "cancelled_late"
+    NO_SHOW_REASON_INVALID = "invalid_booking"
+
+    NO_SHOW_REASON_CHOICES = [
+        (NO_SHOW_REASON_NO_CALL, "Did not show up / no call"),
+        (NO_SHOW_REASON_CANCELLED_LATE, "Cancelled late"),
+        (NO_SHOW_REASON_INVALID, "Invalid booking"),
+    ]
+
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_CONFIRMED, "Confirmed"),
         (STATUS_CANCELLED, "Cancelled"),
         (STATUS_COMPLETED, "Completed"),
+        (STATUS_ARRIVED, "Arrived"),
+        (STATUS_NO_SHOW, "No Show"),
     ]
-    
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="bookings")
     restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name="bookings")
     booking_date = models.DateTimeField(db_index=True)
@@ -561,6 +575,10 @@ class Booking(TimeStampedModel):
     special_requests = models.TextField(blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
     contact_name = models.CharField(max_length=255, blank=True)
+    arrived_time = models.DateTimeField(null=True, blank=True)
+    no_show_reason = models.CharField(max_length=255, blank=True)
+    no_show_notes = models.TextField(blank=True)
+    reminder_sent = models.BooleanField(default=False, db_index=True)
     
     class Meta:
         ordering = ["-booking_date"]

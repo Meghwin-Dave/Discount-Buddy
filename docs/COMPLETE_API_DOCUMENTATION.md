@@ -1152,9 +1152,9 @@ curl -X GET http://127.0.0.1:8000/merchant/api/restaurants/restaurant/reviews/ \
 
 ---
 
-### Step 9: View Restaurant Bookings
+### Step 9: View Restaurant Bookings (Calendar)
 
-**Endpoint**: `GET /merchant/api/restaurants/restaurant/bookings/`
+**Endpoint**: `GET /merchant/api/restaurants/restaurant/bookings`
 
 **Headers**:
 ```
@@ -1162,34 +1162,95 @@ Authorization: Bearer <merchant_access_token>
 ```
 
 **Query Parameters** (optional):
-- `status` - Filter by status (pending, confirmed, cancelled, completed)
-- `ordering` - Order by (booking_date, created_at)
+- `start_date` - Filter from date (`YYYY-MM-DD`) — for calendar day/week/month views
+- `end_date` - Filter to date (`YYYY-MM-DD`)
+- `restaurant_id` - Filter by restaurant ID
+- `status` - Filter by status (`pending`, `confirmed`, `cancelled`, `completed`, `arrived`, `no_show`)
+- `ordering` - Order by (`booking_date`, prefix `-` for descending)
+- `page` - Page number (20 results per page)
 
 **Response** (200 OK):
 ```json
-[
-  {
-    "id": 1,
-    "restaurant": 6,
-    "restaurant_name": "My New Restaurant",
-    "restaurant_slug": "my-new-restaurant",
-    "booking_date": "2024-02-15T19:00:00Z",
-    "number_of_guests": 4,
-    "status": "pending",
-    "special_requests": "Window seat please",
-    "contact_phone": "+44 7123456789",
-    "contact_name": "John Doe",
-    "can_cancel": true,
-    "created_at": "2024-01-26T12:00:00Z"
-  }
-]
+{
+  "count": 2,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": 1254,
+      "restaurant_name": "Pizza 4 You",
+      "contact_name": "John Doe",
+      "contact_phone": "9876543210",
+      "number_of_guests": 4,
+      "booking_date": "2024-02-15T19:00:00Z",
+      "status": "confirmed",
+      "arrived_time": null,
+      "no_show_reason": null,
+      "no_show_notes": null,
+      "updated_at": "2024-01-26T12:00:00Z"
+    }
+  ]
+}
 ```
 
 **cURL**:
 ```bash
-curl -X GET "http://127.0.0.1:8000/merchant/api/restaurants/restaurant/bookings/?status=pending" \
+curl -X GET "http://127.0.0.1:8000/merchant/api/restaurants/restaurant/bookings?start_date=2024-02-01&end_date=2024-02-28&status=confirmed" \
   -H "Authorization: Bearer <merchant_access_token>"
 ```
+
+---
+
+### Step 10: Mark Booking Arrival
+
+**Endpoint**: `POST /merchant/api/restaurants/restaurant/bookings/{id}/arrive`  
+(PATCH also accepted)
+
+**Request Body**:
+```json
+{
+  "arrival_time": "2026-06-16T22:30:00Z"
+}
+```
+`arrival_time` is optional; defaults to server time.
+
+**Response** (200 OK):
+```json
+{
+  "booking_id": 1254,
+  "status": "arrived",
+  "arrived_time": "2026-06-16T22:30:00Z",
+  "updated_at": "2026-06-16T22:31:05Z"
+}
+```
+
+---
+
+### Step 11: Mark Booking No-Show
+
+**Endpoint**: `POST /merchant/api/restaurants/restaurant/bookings/{id}/no-show`  
+(PATCH also accepted)
+
+**Request Body**:
+```json
+{
+  "no_show_reason": "no_show_no_call",
+  "no_show_notes": "We tried to call but there was no response."
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "booking_id": 1254,
+  "status": "no_show",
+  "no_show_reason": "no_show_no_call",
+  "no_show_notes": "We tried to call but there was no response.",
+  "updated_at": "2026-06-16T22:32:00Z"
+}
+```
+
+> See `docs/MERCHANT_BOOKING_API.md` for the full frontend integration guide including FCM reminder payloads.
 
 ---
 
@@ -1252,7 +1313,9 @@ curl -X GET "http://127.0.0.1:8000/merchant/api/restaurants/restaurant/bookings/
 | GET | `/merchant/api/restaurants/merchant/deals/` | List restaurant deals | Yes (Merchant) |
 | POST | `/merchant/api/restaurants/merchant/deals/` | Create deal | Yes (Merchant) |
 | GET | `/merchant/api/restaurants/restaurant/reviews/` | View restaurant reviews | Yes (Merchant) |
-| GET | `/merchant/api/restaurants/restaurant/bookings/` | View restaurant bookings | Yes (Merchant) |
+| GET | `/merchant/api/restaurants/restaurant/bookings` | View restaurant bookings (calendar) | Yes (Merchant) |
+| POST/PATCH | `/merchant/api/restaurants/restaurant/bookings/{id}/arrive` | Mark guest arrived | Yes (Merchant) |
+| POST/PATCH | `/merchant/api/restaurants/restaurant/bookings/{id}/no-show` | Mark no-show | Yes (Merchant) |
 
 ---
 
@@ -1413,7 +1476,9 @@ print(response.json())
 5. ✅ **Add Menu** → `POST /merchant/api/restaurants/restaurant/menu/`
 6. ✅ **Create Deal** → `POST /merchant/api/restaurants/merchant/deals/`
 7. ✅ **View Reviews** → `GET /merchant/api/restaurants/restaurant/reviews/`
-8. ✅ **View Bookings** → `GET /merchant/api/restaurants/restaurant/bookings/`
+8. ✅ **View Bookings** → `GET /merchant/api/restaurants/restaurant/bookings`
+9. ✅ **Mark Arrived** → `POST /merchant/api/restaurants/restaurant/bookings/{id}/arrive`
+10. ✅ **Mark No-Show** → `POST /merchant/api/restaurants/restaurant/bookings/{id}/no-show`
 
 ---
 
