@@ -3,8 +3,10 @@ from django.urls import path
 from .views import (
     RegisterView,
     RegisterInitView,
+    ResendOTPView,
     VerifyOTPView,
     RegisterCompleteView,
+    CheckUsernameAvailabilityView,
     MeView,
     LoginView,
     RefreshTokenView,
@@ -20,8 +22,10 @@ from .views import (
 urlpatterns = [
     # New two-stage registration flow
     path("register/init", RegisterInitView.as_view(), name="register-init"),
+    path("register/resend-otp", ResendOTPView.as_view(), name="register-resend-otp"),
     path("register/verify-otp", VerifyOTPView.as_view(), name="register-verify-otp"),
     path("register/complete", RegisterCompleteView.as_view(), name="register-complete"),
+    path("check-username", CheckUsernameAvailabilityView.as_view(), name="check-username"),
 
     # Legacy single-step registration (still available)
     path("register", RegisterView.as_view(), name="register"),

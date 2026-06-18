@@ -86,6 +86,84 @@ class RegisterInitView(APIView):
         )
 
 
+class ResendOTPView(APIView):
+    """
+    Resend OTP for registration if the first one wasn't received.
+    Endpoint: POST /user/api/users/register/resend-otp
+    """
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        email = request.data.get("email", "").strip()
+
+        if not email:
+            return Response(
+                {"detail": "Email is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check if user already exists
+        User = get_user_model()
+        if User.objects.filter(email=email).exists():
+            return Response(
+                {"detail": "A user with this email already exists."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get the most recent OTP for this email (verified or not)
+        otp_obj = (
+            RegistrationOTP.objects.filter(email=email)
+            .order_by("-created_at")
+            .first()
+        )
+
+        # Check if OTP exists and is still valid (not expired)
+        if otp_obj and not otp_obj.is_expired:
+            # Calculate remaining time
+            remaining_seconds = (otp_obj.expires_at - timezone.now()).total_seconds()
+            remaining_minutes = int(remaining_seconds // 60)
+            
+            return Response(
+                {
+                    "detail": f"OTP already sent. Please wait {remaining_minutes} minutes before requesting a new one.",
+                    "remaining_minutes": remaining_minutes,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Generate new OTP
+        otp_code = f"{random.randint(0, 9999):04d}"
+        expires_at = timezone.now() + timedelta(minutes=10)
+
+        # Create new OTP record
+        RegistrationOTP.objects.create(
+            email=email,
+            role=otp_obj.role if otp_obj else UserProfile.ROLE_CUSTOMER,
+            otp_code=otp_code,
+            expires_at=expires_at,
+        )
+
+        from_email = settings.DEFAULT_FROM_EMAIL
+        subject = "Your Discount Buddy verification code (Resent)"
+        message = f"Your verification code is {otp_code}. It expires in 10 minutes."
+
+        # Send email asynchronously
+        def send_otp_email():
+            try:
+                send_mail(subject, message, from_email, [email], fail_silently=False)
+            except Exception as e:
+                pass
+
+        threading.Thread(target=send_otp_email).start()
+
+        return Response(
+            {"detail": "New verification code sent to your email."},
+            status=status.HTTP_200_OK,
+        )
+
+
 class VerifyOTPView(APIView):
     """
     Stage 2: verify OTP code.
@@ -155,6 +233,7 @@ class RegisterCompleteView(APIView):
         email = serializer.validated_data["email"]
         otp = serializer.validated_data["otp"]
         password = serializer.validated_data["password"]
+        username = serializer.validated_data.get("username", "").strip()
 
         User = get_user_model()
         if User.objects.filter(email=email).exists():
@@ -197,7 +276,11 @@ class RegisterCompleteView(APIView):
 
         # Create the user
         role = otp_obj.role or UserProfile.ROLE_CUSTOMER
-        username = email.split("@")[0] or email
+        
+        # Use provided username or fall back to email prefix
+        if not username:
+            username = email.split("@")[0] or email
+        
         register_serializer = RegisterSerializer(
             data={
                 "email": email,
@@ -210,6 +293,56 @@ class RegisterCompleteView(APIView):
         user = register_serializer.save()
 
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class CheckUsernameAvailabilityView(APIView):
+    """
+    Check if a username is available before registration.
+    Endpoint: GET /user/api/users/check-username?username=desired_username
+    """
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request, *args, **kwargs):
+        username = request.query_params.get("username", "").strip()
+
+        if not username:
+            return Response(
+                {"available": False, "error": "Username is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate username format (alphanumeric, underscore, hyphen, 3-30 chars)
+        import re
+        if not re.match(r"^[a-zA-Z0-9_-]{3,30}$", username):
+            return Response(
+                {
+                    "available": False,
+                    "error": "Username must be 3-30 characters and contain only letters, numbers, underscores, or hyphens.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check if username exists
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {
+                    "available": False,
+                    "message": "Username is already taken.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # Username is available
+        return Response(
+            {
+                "available": True,
+                "message": "Username is available.",
+                "username": username,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class RegisterView(generics.CreateAPIView):

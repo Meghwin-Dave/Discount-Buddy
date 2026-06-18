@@ -141,14 +141,34 @@ class RegisterInitSerializer(serializers.Serializer):
 
 class RegisterCompleteSerializer(serializers.Serializer):
     """
-    Stage 3 of registration: finalize with password.
+    Stage 3 of registration: finalize with password and optional username.
     
-    Email and same OTP are provided to confirm identity.
+    Email, OTP, and password are required.
+    Username is optional - if not provided, it will be derived from email.
     """
 
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=4)
     password = serializers.CharField(write_only=True, min_length=6)
+    username = serializers.CharField(max_length=30, required=False, allow_blank=True)
+
+    def validate_username(self, value):
+        """Validate username format if provided"""
+        if not value:  # Optional field
+            return value
+        
+        import re
+        if not re.match(r"^[a-zA-Z0-9_-]{3,30}$", value):
+            raise serializers.ValidationError(
+                "Username must be 3-30 characters and contain only letters, numbers, underscores, or hyphens."
+            )
+        
+        User = get_user_model()
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("This username is already taken.")
+        
+        return value
+
 
 
 class VerifyOTPSerializer(serializers.Serializer):
