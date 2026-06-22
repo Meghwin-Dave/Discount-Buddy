@@ -17,6 +17,9 @@ from .views import (
     UpdateOccupancyView,
     RestaurantImageViewSet,
     MerchantAnalyticsView,
+    MerchantLoyaltyCustomersView,
+    MerchantLoyaltyClaimRewardView,
+    MerchantLoyaltyHistoryView,
 )
 
 
@@ -42,6 +45,9 @@ urlpatterns = [
     path("restaurant/occupancy", UpdateOccupancyView.as_view(), name="restaurant-occupancy"),
     path("deals/redeem", DealRedemptionView.as_view(), name="deal-redeem"),
     path("deals/redemption-history", MerchantRedemptionHistoryView.as_view(), name="merchant-redemption-history"),
+    path("loyalty/customers", MerchantLoyaltyCustomersView.as_view(), name="merchant-loyalty-customers"),
+    path("loyalty/claim-reward", MerchantLoyaltyClaimRewardView.as_view(), name="merchant-loyalty-claim-reward"),
+    path("loyalty/history", MerchantLoyaltyHistoryView.as_view(), name="merchant-loyalty-history"),
     # Router URLs
     path("", include(router.urls)),
 ]

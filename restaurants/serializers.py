@@ -25,7 +25,10 @@ from .models import (
     MysteryEvidence,
     Facility,
     RestaurantPartnerRequest,
+    UserRestaurantLoyalty,
+    LoyaltyRedemptionRecord,
 )
+from .services import build_loyalty_progress_payload
 
 
 class CountrySerializer(serializers.ModelSerializer):
@@ -160,7 +163,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
     active_deals_count = serializers.IntegerField(read_only=True)
     is_saved = serializers.SerializerMethodField()
     is_favourite = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Restaurant
         fields = (
@@ -168,9 +171,40 @@ class RestaurantSerializer(serializers.ModelSerializer):
             "latitude", "longitude", "phone", "email", "website", "category_ids", "categories",
             "cuisine_ids", "cuisines", "facility_ids",
             "price_range", "occupancy", "verified", "is_featured", "opening_hours",
-            "menu_type", "images", "active_deals_count", "is_saved", "is_favourite", "facilities", "created_at"
+            "menu_type", "images", "active_deals_count", "is_saved", "is_favourite", "facilities",
+            "loyalty_card_enabled", "loyalty_required_redemptions", "loyalty_reward_description",
+            "created_at"
         )
         read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "cuisines", "images")
+
+    def validate(self, attrs):
+        loyalty_enabled = attrs.get(
+            "loyalty_card_enabled",
+            getattr(self.instance, "loyalty_card_enabled", False) if self.instance else False,
+        )
+        required = attrs.get(
+            "loyalty_required_redemptions",
+            getattr(self.instance, "loyalty_required_redemptions", None) if self.instance else None,
+        )
+        reward_desc = attrs.get(
+            "loyalty_reward_description",
+            getattr(self.instance, "loyalty_reward_description", "") if self.instance else "",
+        )
+
+        if loyalty_enabled:
+            if not required or required < 1:
+                raise serializers.ValidationError(
+                    {"loyalty_required_redemptions": "Required when loyalty card is enabled (minimum 1)."}
+                )
+            if not reward_desc or not str(reward_desc).strip():
+                raise serializers.ValidationError(
+                    {"loyalty_reward_description": "Required when loyalty card is enabled."}
+                )
+        elif "loyalty_card_enabled" in attrs and not loyalty_enabled:
+            attrs["loyalty_required_redemptions"] = None
+            attrs["loyalty_reward_description"] = ""
+
+        return attrs
         
     def get_is_saved(self, obj):
         request = self.context.get("request")
@@ -275,7 +309,8 @@ class RestaurantListSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "description", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
-            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "categories", "is_favourite", "active_deals", "cuisines"
+            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "categories",
+            "is_favourite", "active_deals", "cuisines", "loyalty_card_enabled"
         )
 
         
@@ -851,6 +886,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
     has_user_reviewed = serializers.SerializerMethodField()
     distance = serializers.SerializerMethodField()
     distance_miles = serializers.SerializerMethodField()
+    loyalty_program = serializers.SerializerMethodField()
     
     class Meta:
         model = Restaurant
@@ -860,7 +896,8 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "categories", "cuisines", "facilities", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
-            "is_favourite", "has_user_reviewed", "distance", "distance_miles", "menu_type", "created_at"
+            "is_favourite", "has_user_reviewed", "distance", "distance_miles", "menu_type",
+            "loyalty_program", "created_at"
         )
         
     def get_reviews(self, obj):
@@ -927,6 +964,20 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         
         return round(value, 2) if isinstance(value, (int, float)) else None
 
+    def get_loyalty_program(self, obj):
+        if not obj.loyalty_card_enabled:
+            return {"loyalty_card_enabled": False}
+
+        request = self.context.get("request")
+        loyalty = None
+        if request and request.user.is_authenticated:
+            loyalty = UserRestaurantLoyalty.objects.filter(
+                user=request.user, restaurant=obj
+            ).first()
+
+        progress = build_loyalty_progress_payload(restaurant=obj, loyalty=loyalty)
+        return progress or {"loyalty_card_enabled": True}
+
 
 class RestaurantProfileSerializer(serializers.ModelSerializer):
     restaurant = RestaurantSerializer(read_only=True)
@@ -955,7 +1006,8 @@ class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
         fields = (
             "id", "name", "slug", "description", "location", "price_range", "occupancy",
             "verified", "is_featured", "image", "rating", "average_rating", "review_count",
-            "distance_km", "distance_miles", "cuisines", "deals", "is_favourite"
+            "distance_km", "distance_miles", "cuisines", "deals", "is_favourite",
+            "loyalty_card_enabled"
         )
 
     def get_location(self, obj):
@@ -1140,4 +1192,94 @@ class RestaurantPartnerRequestSerializer(serializers.ModelSerializer):
             "website": {"required": False, "allow_null": True, "allow_blank": True},
             "comments": {"required": False, "allow_null": True, "allow_blank": True},
         }
+
+
+class LoyaltyProgressSerializer(serializers.Serializer):
+    """Customer loyalty progress for a single restaurant."""
+    loyalty_card_enabled = serializers.BooleanField()
+    required_redemptions = serializers.IntegerField(required=False)
+    reward_description = serializers.CharField(required=False, allow_blank=True)
+    completed_redemptions = serializers.IntegerField(required=False)
+    remaining_redemptions = serializers.IntegerField(required=False)
+    progress_text = serializers.CharField(required=False, allow_blank=True)
+    progress_percentage = serializers.FloatField(required=False)
+    is_reward_eligible = serializers.BooleanField(required=False)
+    reward_eligible_at = serializers.DateTimeField(required=False, allow_null=True)
+    total_lifetime_redemptions = serializers.IntegerField(required=False)
+    rewards_earned = serializers.IntegerField(required=False)
+    last_reward_claimed_at = serializers.DateTimeField(required=False, allow_null=True)
+
+
+class UserLoyaltyCardSerializer(serializers.ModelSerializer):
+    """User's loyalty card summary across restaurants."""
+    restaurant_id = serializers.IntegerField(source="restaurant.id", read_only=True)
+    restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
+    restaurant_slug = serializers.CharField(source="restaurant.slug", read_only=True)
+    loyalty_program = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserRestaurantLoyalty
+        fields = (
+            "id", "restaurant_id", "restaurant_name", "restaurant_slug",
+            "current_cycle_redemptions", "total_lifetime_redemptions", "rewards_earned",
+            "is_reward_eligible", "reward_eligible_at", "last_reward_claimed_at",
+            "loyalty_program", "created_at", "updated_at",
+        )
+
+    def get_loyalty_program(self, obj):
+        return build_loyalty_progress_payload(restaurant=obj.restaurant, loyalty=obj)
+
+
+class MerchantLoyaltyCustomerSerializer(serializers.ModelSerializer):
+    """Merchant view of a customer's loyalty status."""
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    user_name = serializers.SerializerMethodField()
+    loyalty_program = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserRestaurantLoyalty
+        fields = (
+            "id", "user_id", "user_email", "user_name",
+            "current_cycle_redemptions", "total_lifetime_redemptions", "rewards_earned",
+            "is_reward_eligible", "reward_eligible_at", "last_reward_claimed_at",
+            "loyalty_program", "updated_at",
+        )
+
+    def get_user_name(self, obj):
+        return obj.user.get_full_name() or obj.user.email
+
+    def get_loyalty_program(self, obj):
+        return build_loyalty_progress_payload(restaurant=obj.restaurant, loyalty=obj)
+
+
+class LoyaltyRedemptionRecordSerializer(serializers.ModelSerializer):
+    """Audit record for loyalty redemption history."""
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    deal_use_id = serializers.IntegerField(source="deal_use.id", read_only=True, allow_null=True)
+    deal_title = serializers.CharField(source="deal_use.deal.title", read_only=True, allow_null=True)
+
+    class Meta:
+        model = LoyaltyRedemptionRecord
+        fields = (
+            "id", "user_email", "deal_use_id", "deal_title", "status",
+            "cycle_redemption_number", "total_lifetime_redemptions", "notes", "created_at",
+        )
+
+
+class LoyaltyRewardClaimSerializer(serializers.Serializer):
+    """Request body for merchant to mark a loyalty reward as claimed."""
+    restaurant_id = serializers.IntegerField()
+    user_id = serializers.IntegerField()
+
+    def validate_restaurant_id(self, value):
+        if not Restaurant.objects.filter(pk=value, is_active=True).exists():
+            raise serializers.ValidationError("Restaurant not found.")
+        return value
+
+    def validate_user_id(self, value):
+        from users.models import User
+        if not User.objects.filter(pk=value).exists():
+            raise serializers.ValidationError("User not found.")
+        return value
 

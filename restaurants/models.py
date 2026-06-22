@@ -148,6 +148,22 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
         default=30,
         help_text="Required minimum gap in days between scheduled mystery visits.",
     )
+
+    # Loyalty Card configuration
+    loyalty_card_enabled = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this restaurant runs a loyalty card program.",
+    )
+    loyalty_required_redemptions = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of successful redemptions required to earn a reward.",
+    )
+    loyalty_reward_description = models.TextField(
+        blank=True,
+        help_text="Description of the reward granted when required redemptions are reached.",
+    )
     
     class Meta:
         ordering = ["-is_featured", "-created_at"]
@@ -872,3 +888,99 @@ class RestaurantPartnerRequest(TimeStampedModel):
 
     def __str__(self):
         return f"{self.restaurant_name} - {self.contact_name}"
+
+
+class UserRestaurantLoyalty(TimeStampedModel):
+    """Tracks loyalty card progress for a user at a specific restaurant."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="restaurant_loyalties",
+    )
+    restaurant = models.ForeignKey(
+        Restaurant,
+        on_delete=models.CASCADE,
+        related_name="user_loyalties",
+    )
+    current_cycle_redemptions = models.PositiveIntegerField(
+        default=0,
+        help_text="Redemptions counted toward the next reward in the current cycle.",
+    )
+    total_lifetime_redemptions = models.PositiveIntegerField(
+        default=0,
+        help_text="Total successful redemptions at this restaurant (all time).",
+    )
+    rewards_earned = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of loyalty rewards earned (claimed).",
+    )
+    is_reward_eligible = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True when the user has reached the required redemption count and can claim a reward.",
+    )
+    reward_eligible_at = models.DateTimeField(null=True, blank=True)
+    last_reward_claimed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = [["user", "restaurant"]]
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["restaurant", "is_reward_eligible"]),
+            models.Index(fields=["user", "restaurant"]),
+        ]
+        verbose_name_plural = "User restaurant loyalties"
+
+    def __str__(self):
+        return f"{self.user.email} @ {self.restaurant.name} ({self.current_cycle_redemptions} redemptions)"
+
+
+class LoyaltyRedemptionRecord(TimeStampedModel):
+    """Audit log of each redemption that contributed to loyalty progress."""
+
+    STATUS_COUNTED = "counted"
+    STATUS_REWARD_EARNED = "reward_earned"
+    STATUS_REWARD_CLAIMED = "reward_claimed"
+
+    STATUS_CHOICES = [
+        (STATUS_COUNTED, "Counted toward loyalty"),
+        (STATUS_REWARD_EARNED, "Reward eligibility reached"),
+        (STATUS_REWARD_CLAIMED, "Reward claimed"),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="loyalty_redemption_records",
+    )
+    restaurant = models.ForeignKey(
+        Restaurant,
+        on_delete=models.CASCADE,
+        related_name="loyalty_redemption_records",
+    )
+    deal_use = models.ForeignKey(
+        "DealUse",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="loyalty_records",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_COUNTED)
+    cycle_redemption_number = models.PositiveIntegerField(
+        help_text="Redemption number within the current loyalty cycle after this event.",
+    )
+    total_lifetime_redemptions = models.PositiveIntegerField(
+        help_text="Total lifetime redemptions at this restaurant after this event.",
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["restaurant", "user", "-created_at"]),
+            models.Index(fields=["deal_use"]),
+        ]
+
+    def __str__(self):
+        return f"Loyalty record: {self.user.email} @ {self.restaurant.name} ({self.status})"

@@ -9,7 +9,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from decimal import Decimal
-from .models import Deal, DealUse, Restaurant
+from .models import Deal, DealUse, Restaurant, UserRestaurantLoyalty, LoyaltyRedemptionRecord
 from users.models import User
 
 
@@ -126,10 +126,185 @@ def create_deal_use_with_redemption(
 
 
 @dataclass
+class LoyaltyUpdateResult:
+    loyalty: UserRestaurantLoyalty | None = None
+    reward_just_earned: bool = False
+
+
+def build_loyalty_progress_payload(
+    *, restaurant: Restaurant, loyalty: UserRestaurantLoyalty | None
+) -> dict | None:
+    """Build a customer-facing loyalty progress dict for API responses."""
+    if not restaurant.loyalty_card_enabled:
+        return None
+
+    required = restaurant.loyalty_required_redemptions or 0
+    completed = loyalty.current_cycle_redemptions if loyalty else 0
+    remaining = max(required - completed, 0) if required else 0
+    progress_percentage = (
+        round((completed / required) * 100, 1) if required else 0.0
+    )
+
+    payload = {
+        "loyalty_card_enabled": True,
+        "required_redemptions": required,
+        "reward_description": restaurant.loyalty_reward_description,
+        "completed_redemptions": completed,
+        "remaining_redemptions": remaining,
+        "progress_text": f"{completed} of {required} redemptions completed" if required else "",
+        "progress_percentage": progress_percentage,
+        "is_reward_eligible": loyalty.is_reward_eligible if loyalty else False,
+        "reward_eligible_at": (
+            loyalty.reward_eligible_at.isoformat() if loyalty and loyalty.reward_eligible_at else None
+        ),
+        "total_lifetime_redemptions": loyalty.total_lifetime_redemptions if loyalty else 0,
+        "rewards_earned": loyalty.rewards_earned if loyalty else 0,
+        "last_reward_claimed_at": (
+            loyalty.last_reward_claimed_at.isoformat() if loyalty and loyalty.last_reward_claimed_at else None
+        ),
+    }
+    return payload
+
+
+@transaction.atomic
+def update_loyalty_on_redemption(*, deal_use: DealUse) -> LoyaltyUpdateResult:
+    """
+    Increment loyalty progress when a deal is successfully redeemed.
+    Creates audit records and awards eligibility when the threshold is reached.
+    """
+    restaurant = deal_use.deal.restaurant
+    if not restaurant.loyalty_card_enabled or not restaurant.loyalty_required_redemptions:
+        return LoyaltyUpdateResult()
+
+    required = restaurant.loyalty_required_redemptions
+    user = deal_use.user
+
+    loyalty, _ = UserRestaurantLoyalty.objects.select_for_update().get_or_create(
+        user=user,
+        restaurant=restaurant,
+        defaults={
+            "current_cycle_redemptions": 0,
+            "total_lifetime_redemptions": 0,
+        },
+    )
+
+    # Skip if this deal_use was already counted (idempotency guard).
+    if LoyaltyRedemptionRecord.objects.filter(
+        deal_use=deal_use,
+        status=LoyaltyRedemptionRecord.STATUS_COUNTED,
+    ).exists():
+        return LoyaltyUpdateResult(loyalty=loyalty)
+
+    loyalty.current_cycle_redemptions += 1
+    loyalty.total_lifetime_redemptions += 1
+    reward_just_earned = False
+
+    record_status = LoyaltyRedemptionRecord.STATUS_COUNTED
+    if loyalty.current_cycle_redemptions >= required and not loyalty.is_reward_eligible:
+        loyalty.is_reward_eligible = True
+        loyalty.reward_eligible_at = timezone.now()
+        record_status = LoyaltyRedemptionRecord.STATUS_REWARD_EARNED
+        reward_just_earned = True
+
+    loyalty.save(
+        update_fields=[
+            "current_cycle_redemptions",
+            "total_lifetime_redemptions",
+            "is_reward_eligible",
+            "reward_eligible_at",
+            "updated_at",
+        ]
+    )
+
+    LoyaltyRedemptionRecord.objects.create(
+        user=user,
+        restaurant=restaurant,
+        deal_use=deal_use,
+        status=record_status,
+        cycle_redemption_number=loyalty.current_cycle_redemptions,
+        total_lifetime_redemptions=loyalty.total_lifetime_redemptions,
+    )
+
+    return LoyaltyUpdateResult(loyalty=loyalty, reward_just_earned=reward_just_earned)
+
+
+@transaction.atomic
+def claim_loyalty_reward(
+    *, actor: User, restaurant: Restaurant, customer_user: User
+) -> tuple[bool, str, UserRestaurantLoyalty | None]:
+    """
+    Mark a customer's loyalty reward as claimed (merchant action).
+    Resets the current cycle, carrying over excess redemptions if any.
+    """
+    if not restaurant.loyalty_card_enabled:
+        return False, "Loyalty card is not enabled for this restaurant.", None
+
+    required = restaurant.loyalty_required_redemptions
+    if not required:
+        return False, "Loyalty card is not configured for this restaurant.", None
+
+    owns_restaurant = False
+    if hasattr(actor, "restaurant_profile") and actor.restaurant_profile.restaurant_id == restaurant.id:
+        owns_restaurant = True
+    elif hasattr(actor, "merchant") and restaurant.merchant_id == actor.merchant.id:
+        owns_restaurant = True
+
+    if not owns_restaurant:
+        return False, "You are not allowed to manage loyalty for this restaurant.", None
+
+    try:
+        loyalty = UserRestaurantLoyalty.objects.select_for_update().get(
+            user=customer_user,
+            restaurant=restaurant,
+        )
+    except UserRestaurantLoyalty.DoesNotExist:
+        return False, "No loyalty record found for this customer.", None
+
+    if not loyalty.is_reward_eligible:
+        return False, "This customer is not eligible for a loyalty reward.", None
+
+    excess = loyalty.current_cycle_redemptions - required
+    loyalty.current_cycle_redemptions = max(excess, 0)
+    loyalty.is_reward_eligible = False
+    loyalty.rewards_earned += 1
+    loyalty.last_reward_claimed_at = timezone.now()
+    loyalty.reward_eligible_at = None
+    loyalty.save(
+        update_fields=[
+            "current_cycle_redemptions",
+            "is_reward_eligible",
+            "rewards_earned",
+            "last_reward_claimed_at",
+            "reward_eligible_at",
+            "updated_at",
+        ]
+    )
+
+    LoyaltyRedemptionRecord.objects.create(
+        user=customer_user,
+        restaurant=restaurant,
+        deal_use=None,
+        status=LoyaltyRedemptionRecord.STATUS_REWARD_CLAIMED,
+        cycle_redemption_number=loyalty.current_cycle_redemptions,
+        total_lifetime_redemptions=loyalty.total_lifetime_redemptions,
+        notes=f"Reward claimed by {actor.email}",
+    )
+
+    # Re-check eligibility if excess redemptions already meet threshold.
+    if loyalty.current_cycle_redemptions >= required:
+        loyalty.is_reward_eligible = True
+        loyalty.reward_eligible_at = timezone.now()
+        loyalty.save(update_fields=["is_reward_eligible", "reward_eligible_at", "updated_at"])
+
+    return True, "Loyalty reward claimed successfully.", loyalty
+
+
+@dataclass
 class RedemptionResult:
     success: bool
     reason: str
     deal_use: DealUse | None = None
+    loyalty_result: LoyaltyUpdateResult | None = None
 
 
 @transaction.atomic
@@ -254,6 +429,8 @@ def redeem_deal(
         "discount_amount_saved", "final_bill_amount", "updated_at"
     ])
 
-    return RedemptionResult(True, "Deal redeemed successfully.", deal_use)
+    loyalty_result = update_loyalty_on_redemption(deal_use=deal_use)
+
+    return RedemptionResult(True, "Deal redeemed successfully.", deal_use, loyalty_result)
 
 

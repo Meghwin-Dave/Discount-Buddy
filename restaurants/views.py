@@ -37,6 +37,8 @@ from .models import (
     Facility,
     RestaurantImage,
     RestaurantPartnerRequest,
+    UserRestaurantLoyalty,
+    LoyaltyRedemptionRecord,
 )
 from .serializers import (
     CountrySerializer,
@@ -78,8 +80,12 @@ from .serializers import (
     HomeScreenRestaurantSerializer,
     HomeScreenDealSerializer,
     HomeScreenCuisineSerializer,
+    UserLoyaltyCardSerializer,
+    MerchantLoyaltyCustomerSerializer,
+    LoyaltyRedemptionRecordSerializer,
+    LoyaltyRewardClaimSerializer,
 )
-from .services import redeem_deal, calculate_distance, km_to_miles
+from .services import redeem_deal, calculate_distance, km_to_miles, claim_loyalty_reward, build_loyalty_progress_payload
 from users.permissions import (
     IsMerchant,
     IsUser,
@@ -1542,20 +1548,8 @@ class OpeningSlotManagementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsRestaurant]
     
     def get_queryset(self):
-        # Get opening slots for user's restaurants
-        user = self.request.user
-        restaurant_ids = []
-        try:
-            if hasattr(user, 'restaurant_profile'):
-                restaurant_ids = [user.restaurant_profile.restaurant_id]
-            elif hasattr(user, 'merchant'):
-                restaurant_ids = list(
-                    Restaurant.objects.filter(merchant=user.merchant).values_list("id", flat=True)
-                )
-        except:
-            pass
-        
-        return OpeningSlot.objects.filter(restaurant_id__in=restaurant_ids)
+        restaurant_qs = get_merchant_restaurants_queryset(self.request.user)
+        return OpeningSlot.objects.filter(restaurant__in=restaurant_qs)
     
     def perform_create(self, serializer):
         # Ensure restaurant belongs to user
@@ -1580,25 +1574,17 @@ class RestaurantReviewsManagementView(generics.ListAPIView):
     permission_classes = [IsRestaurant]
     
     def get_queryset(self):
-        # Get reviews for user's restaurants
-        user = self.request.user
-        restaurant_ids = []
-        try:
-            if hasattr(user, 'restaurant_profile'):
-                restaurant_ids = [user.restaurant_profile.restaurant_id]
-            elif hasattr(user, 'merchant'):
-                merchant = Merchant.objects.get(user=user)
-                restaurant_ids = list(
-                    Restaurant.objects.filter(merchant=merchant).values_list("id", flat=True)
-                )
-        except:
-            pass
-        
-        queryset = Review.objects.filter(restaurant_id__in=restaurant_ids).select_related("user")
-        
-        # Filter by specific restaurant if provided
-        restaurant_id = self.request.query_params.get('restaurant_id')
-        if restaurant_id and restaurant_id != 'all':
+        restaurant_qs = get_merchant_restaurants_queryset(self.request.user)
+
+        queryset = Review.objects.filter(
+            restaurant__in=restaurant_qs
+        ).select_related("user")
+
+        restaurant_id = (
+            self.request.query_params.get("restaurant_id")
+            or self.request.query_params.get("restaurant")
+        )
+        if restaurant_id and restaurant_id != "all":
             queryset = queryset.filter(restaurant_id=restaurant_id)
             
         return queryset
@@ -1621,27 +1607,17 @@ class RestaurantBookingsManagementViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "patch", "head", "options", "post"]
     
     def get_queryset(self):
-        # Get bookings for user's restaurants
-        user = self.request.user
-        restaurant_ids = []
-        try:
-            if hasattr(user, 'restaurant_profile'):
-                restaurant_ids = [user.restaurant_profile.restaurant_id]
-            elif hasattr(user, 'merchant'):
-                merchant = Merchant.objects.get(user=user)
-                restaurant_ids = list(
-                    Restaurant.objects.filter(merchant=merchant).values_list("id", flat=True)
-                )
-        except Exception:
-            pass
-        
+        restaurant_qs = get_merchant_restaurants_queryset(self.request.user)
+
         queryset = Booking.objects.filter(
-            restaurant_id__in=restaurant_ids
+            restaurant__in=restaurant_qs
         ).select_related("user", "restaurant")
-        
-        # Filter by specific restaurant if provided
-        restaurant_id = self.request.query_params.get('restaurant_id')
-        if restaurant_id and restaurant_id != 'all':
+
+        restaurant_id = (
+            self.request.query_params.get("restaurant_id")
+            or self.request.query_params.get("restaurant")
+        )
+        if restaurant_id and restaurant_id != "all":
             queryset = queryset.filter(restaurant_id=restaurant_id)
 
         start_date = self.request.query_params.get("start_date")
@@ -1732,6 +1708,15 @@ class DealRedemptionView(APIView):
         deal_use = result.deal_use
         payload = DealUseSerializer(deal_use, context={"request": request}).data
         payload.update({"success": True, "reason": result.reason})
+
+        if result.loyalty_result and result.loyalty_result.loyalty:
+            restaurant = deal_use.deal.restaurant
+            payload["loyalty"] = build_loyalty_progress_payload(
+                restaurant=restaurant,
+                loyalty=result.loyalty_result.loyalty,
+            )
+            payload["loyalty_reward_just_earned"] = result.loyalty_result.reward_just_earned
+
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -2590,3 +2575,163 @@ class RestaurantPartnerRequestViewSet(mixins.CreateModelMixin, viewsets.GenericV
         except Exception as e:
             # We log it but don't break the user's successful submission
             print(f"Error sending partner request email: {e}")
+
+
+class UserLoyaltyCardViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Customer loyalty cards across all restaurants.
+    List all loyalty progress or retrieve for a specific restaurant.
+    """
+    serializer_class = UserLoyaltyCardSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return UserRestaurantLoyalty.objects.filter(
+            user=self.request.user,
+            restaurant__loyalty_card_enabled=True,
+            restaurant__is_active=True,
+        ).select_related("restaurant", "user")
+
+    def get_object(self):
+        restaurant_id = self.kwargs.get("pk")
+        try:
+            return self.get_queryset().get(restaurant_id=restaurant_id)
+        except UserRestaurantLoyalty.DoesNotExist:
+            restaurant = Restaurant.objects.filter(
+                pk=restaurant_id,
+                loyalty_card_enabled=True,
+                is_active=True,
+            ).first()
+            if not restaurant:
+                raise NotFound("Restaurant not found or loyalty card is not enabled.")
+            loyalty, _ = UserRestaurantLoyalty.objects.get_or_create(
+                user=self.request.user,
+                restaurant=restaurant,
+            )
+            return loyalty
+
+
+class MerchantLoyaltyCustomersView(APIView):
+    """List customers with loyalty progress for a merchant's restaurant."""
+
+    permission_classes = [IsRestaurant]
+
+    def get(self, request):
+        restaurant_id = request.query_params.get("restaurant_id")
+        if not restaurant_id:
+            return Response(
+                {"error": "restaurant_id query parameter is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        restaurant_qs = get_merchant_restaurants_queryset(request.user)
+        try:
+            restaurant = restaurant_qs.get(pk=restaurant_id)
+        except Restaurant.DoesNotExist:
+            return Response({"error": "Restaurant not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        eligible_only = request.query_params.get("eligible_only", "").lower() in ("true", "1", "yes")
+        queryset = UserRestaurantLoyalty.objects.filter(
+            restaurant=restaurant,
+        ).select_related("user", "restaurant")
+
+        if eligible_only:
+            queryset = queryset.filter(is_reward_eligible=True)
+
+        serializer = MerchantLoyaltyCustomerSerializer(
+            queryset.order_by("-is_reward_eligible", "-updated_at"),
+            many=True,
+            context={"request": request},
+        )
+        return Response({
+            "restaurant_id": restaurant.id,
+            "restaurant_name": restaurant.name,
+            "loyalty_card_enabled": restaurant.loyalty_card_enabled,
+            "required_redemptions": restaurant.loyalty_required_redemptions,
+            "reward_description": restaurant.loyalty_reward_description,
+            "customers": serializer.data,
+            "count": len(serializer.data),
+        })
+
+
+class MerchantLoyaltyClaimRewardView(APIView):
+    """Mark a customer's loyalty reward as claimed."""
+
+    permission_classes = [IsRestaurant]
+
+    def post(self, request):
+        serializer = LoyaltyRewardClaimSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        restaurant_id = serializer.validated_data["restaurant_id"]
+        user_id = serializer.validated_data["user_id"]
+
+        restaurant_qs = get_merchant_restaurants_queryset(request.user)
+        try:
+            restaurant = restaurant_qs.get(pk=restaurant_id)
+        except Restaurant.DoesNotExist:
+            return Response({"error": "Restaurant not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        from users.models import User
+        try:
+            customer = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"error": "Customer not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        success, message, loyalty = claim_loyalty_reward(
+            actor=request.user,
+            restaurant=restaurant,
+            customer_user=customer,
+        )
+
+        if not success:
+            return Response({"success": False, "reason": message}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            "success": True,
+            "reason": message,
+            "loyalty": MerchantLoyaltyCustomerSerializer(loyalty, context={"request": request}).data,
+        })
+
+
+class MerchantLoyaltyHistoryView(APIView):
+    """Audit log of loyalty redemption events for a restaurant."""
+
+    permission_classes = [IsRestaurant]
+
+    def get(self, request):
+        restaurant_id = request.query_params.get("restaurant_id")
+        if not restaurant_id:
+            return Response(
+                {"error": "restaurant_id query parameter is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        restaurant_qs = get_merchant_restaurants_queryset(request.user)
+        try:
+            restaurant = restaurant_qs.get(pk=restaurant_id)
+        except Restaurant.DoesNotExist:
+            return Response({"error": "Restaurant not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        queryset = LoyaltyRedemptionRecord.objects.filter(
+            restaurant=restaurant,
+        ).select_related("user", "deal_use", "deal_use__deal")
+
+        user_id = request.query_params.get("user_id")
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        serializer = LoyaltyRedemptionRecordSerializer(
+            queryset.order_by("-created_at")[:200],
+            many=True,
+        )
+        return Response({
+            "restaurant_id": restaurant.id,
+            "records": serializer.data,
+            "count": len(serializer.data),
+        })
+

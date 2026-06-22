@@ -21,6 +21,8 @@ from .models import (
     MysteryScore,
     MysteryEvidence,
     Facility,
+    UserRestaurantLoyalty,
+    LoyaltyRedemptionRecord,
 )
 from wallet.models import Wallet, WalletTransaction
 from .opening_hours_sync import sync_opening_slots_from_opening_hours
@@ -70,12 +72,13 @@ class RestaurantAdmin(admin.ModelAdmin):
         "is_featured",
         "price_range",
         "occupancy",
+        "loyalty_card_enabled",
         "required_visit_gap",
         "last_mystery_visit_date",
         "next_mystery_visit_date",
         "created_at",
     )
-    list_filter = ("verified", "is_featured", "city__country", "city", "created_at")
+    list_filter = ("verified", "is_featured", "loyalty_card_enabled", "city__country", "city", "created_at")
     search_fields = ("name", "address", "city__name", "description")
     raw_id_fields = ("merchant", "city")
     filter_horizontal = ("categories", "cuisines", "facilities")
@@ -102,6 +105,16 @@ class RestaurantAdmin(admin.ModelAdmin):
                     "occupancy",
                     "opening_hours",
                     "required_visit_gap",
+                )
+            },
+        ),
+        (
+            "Loyalty Card",
+            {
+                "fields": (
+                    "loyalty_card_enabled",
+                    "loyalty_required_redemptions",
+                    "loyalty_reward_description",
                 )
             },
         ),
@@ -315,3 +328,34 @@ class MysteryEvidenceAdmin(admin.ModelAdmin):
     list_display = ("visit", "description", "created_at")
     search_fields = ("visit__restaurant__name", "visit__mystery_guest__email", "description")
     raw_id_fields = ("visit",)
+
+
+@admin.register(UserRestaurantLoyalty)
+class UserRestaurantLoyaltyAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "restaurant",
+        "current_cycle_redemptions",
+        "total_lifetime_redemptions",
+        "is_reward_eligible",
+        "rewards_earned",
+        "updated_at",
+    )
+    list_filter = ("is_reward_eligible", "restaurant")
+    search_fields = ("user__email", "restaurant__name")
+    raw_id_fields = ("user", "restaurant")
+
+
+@admin.register(LoyaltyRedemptionRecord)
+class LoyaltyRedemptionRecordAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "restaurant",
+        "status",
+        "cycle_redemption_number",
+        "deal_use",
+        "created_at",
+    )
+    list_filter = ("status", "restaurant", "created_at")
+    search_fields = ("user__email", "restaurant__name")
+    raw_id_fields = ("user", "restaurant", "deal_use")

@@ -18,6 +18,7 @@ from .views import (
     MysteryVisitViewSet,
     FacilityListView,
     RestaurantPartnerRequestViewSet,
+    UserLoyaltyCardViewSet,
 )
 
 router = DefaultRouter(trailing_slash=False)
@@ -31,6 +32,7 @@ router.register(r"reviews", ReviewViewSet, basename="review")
 router.register(r"bookings", BookingViewSet, basename="booking")
 router.register(r"mystery-visits", MysteryVisitViewSet, basename="mystery-visit")
 router.register(r"partner-requests", RestaurantPartnerRequestViewSet, basename="partner-request")
+router.register(r"loyalty-cards", UserLoyaltyCardViewSet, basename="loyalty-card")
 
 urlpatterns = [
     # Public endpoints
