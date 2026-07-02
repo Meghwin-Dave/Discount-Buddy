@@ -4,6 +4,7 @@ from django.utils import timezone
 import math
 
 from core.models import TimeStampedModel, SoftDeleteModel
+from core.mixins import ProcessedImageMixin
 from users.models import User
 
 
@@ -369,14 +370,14 @@ class Deal(TimeStampedModel, SoftDeleteModel):
         return user_uses < self.max_per_user
 
 
-class RestaurantImage(TimeStampedModel):
+class RestaurantImage(ProcessedImageMixin, TimeStampedModel):
     """Restaurant images"""
     restaurant = models.ForeignKey(
         Restaurant,
         on_delete=models.CASCADE,
         related_name="images"
     )
-    image = models.ImageField(upload_to="restaurants/%Y/%m/%d/")
+    image = models.ImageField(upload_to="restaurants/%Y/%m/%d/", blank=True, null=True)
     alt_text = models.CharField(max_length=255, blank=True)
     
     # Image types
@@ -402,14 +403,14 @@ class RestaurantImage(TimeStampedModel):
         return f"{self.restaurant.name} - Image {self.id}"
 
 
-class DealImage(TimeStampedModel):
+class DealImage(ProcessedImageMixin, TimeStampedModel):
     """Deal images"""
     deal = models.ForeignKey(
         Deal,
         on_delete=models.CASCADE,
         related_name="images"
     )
-    image = models.ImageField(upload_to="deals/%Y/%m/%d/")
+    image = models.ImageField(upload_to="deals/%Y/%m/%d/", blank=True, null=True)
     alt_text = models.CharField(max_length=255, blank=True)
     is_primary = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
@@ -635,7 +636,7 @@ class MenuCategory(TimeStampedModel):
         return f"{self.restaurant.name} - {self.name}"
 
 
-class MenuItem(TimeStampedModel):
+class MenuItem(ProcessedImageMixin, TimeStampedModel):
     """Menu items"""
     category = models.ForeignKey(
         MenuCategory,

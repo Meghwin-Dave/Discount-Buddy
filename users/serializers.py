@@ -3,15 +3,24 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from core.serializers_image import ProfilePictureOutputMixin
 from .models import UserProfile, RegistrationOTP
 
 User = get_user_model()
 
 
-class UserProfileSerializer(serializers.ModelSerializer):
+class UserProfileSerializer(ProfilePictureOutputMixin, serializers.ModelSerializer):
     class Meta:
         model = UserProfile
-        fields = ("role", "phone_number", "profile_picture", "marketing_opt_in")
+        fields = (
+            "role",
+            "phone_number",
+            "profile_picture",
+            "marketing_opt_in",
+        )
+        extra_kwargs = {
+            "profile_picture": {"write_only": True, "required": False},
+        }
 
 
 class UserSerializer(serializers.ModelSerializer):

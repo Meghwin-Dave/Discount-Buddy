@@ -60,7 +60,7 @@ class FacilityAdmin(admin.ModelAdmin):
 class RestaurantImageInline(admin.TabularInline):
     model = RestaurantImage
     extra = 1
-    fields = ("image", "alt_text", "is_primary", "order")
+    fields = ("image", "alt_text", "image_type", "is_primary", "order")
 
 
 @admin.register(Restaurant)
@@ -261,7 +261,17 @@ class BookingAdmin(admin.ModelAdmin):
 class MenuItemInline(admin.TabularInline):
     model = MenuItem
     extra = 1
-    fields = ("name", "description", "price", "is_vegetarian", "is_vegan", "is_gluten_free", "is_available", "order")
+    fields = (
+        "name",
+        "description",
+        "price",
+        "image",
+        "is_vegetarian",
+        "is_vegan",
+        "is_gluten_free",
+        "is_available",
+        "order",
+    )
 
 
 @admin.register(MenuCategory)

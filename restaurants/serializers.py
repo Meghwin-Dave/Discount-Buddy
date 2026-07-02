@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.utils import timezone
 
+from core.serializers_image import ProcessedImageOutputMixin
+from core.services.image_service import ImageProcessingService
 from .opening_hours_sync import sync_opening_slots_from_opening_hours
 from .models import (
     Country,
@@ -28,6 +30,22 @@ from .models import (
     UserRestaurantLoyalty,
     LoyaltyRedemptionRecord,
 )
+
+
+def _get_primary_restaurant_image_url(restaurant, request=None):
+    primary_img = restaurant.images.filter(is_primary=True).first() or restaurant.images.first()
+    if not primary_img:
+        return None
+    urls = ImageProcessingService.get_image_urls(primary_img, request=request)
+    return urls.get("large") or urls.get("medium")
+
+
+def _get_primary_deal_image_url(deal, request=None):
+    primary_img = deal.images.filter(is_primary=True).first() or deal.images.first()
+    if not primary_img:
+        return None
+    urls = ImageProcessingService.get_image_urls(primary_img, request=request)
+    return urls.get("large") or urls.get("medium")
 from .services import build_loyalty_progress_payload
 
 
@@ -87,20 +105,20 @@ class FacilitySerializer(serializers.ModelSerializer):
         fields = ("id", "name", "slug", "icon", "is_active")
 
 
-class RestaurantImageSerializer(serializers.ModelSerializer):
-    image_url = serializers.SerializerMethodField()
-    
+class RestaurantImageSerializer(ProcessedImageOutputMixin, serializers.ModelSerializer):
     class Meta:
         model = RestaurantImage
-        fields = ("id", "image", "image_url", "alt_text", "image_type", "is_primary", "order")
-        
-    def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
+        fields = (
+            "id",
+            "image",
+            "alt_text",
+            "image_type",
+            "is_primary",
+            "order",
+        )
+        extra_kwargs = {
+            "image": {"write_only": True, "required": False},
+        }
 
 
 class CuisineSerializer(serializers.ModelSerializer):
@@ -321,17 +339,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
         return False
         
     def get_primary_image(self, obj):
-        primary_img = obj.images.filter(is_primary=True).first()
-        if not primary_img:
-            primary_img = obj.images.first()
-        if primary_img and primary_img.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(primary_img.image.url)
-            return primary_img.image.url
-        return None
-
-    def get_leaderboard_score(self, obj):
+        return _get_primary_restaurant_image_url(obj, self.context.get("request"))
         return obj.get_leaderboard_score()
 
     def get_average_rating(self, obj):
@@ -375,20 +383,19 @@ class RestaurantListSerializer(serializers.ModelSerializer):
 
 
 
-class DealImageSerializer(serializers.ModelSerializer):
-    image_url = serializers.SerializerMethodField()
-    
+class DealImageSerializer(ProcessedImageOutputMixin, serializers.ModelSerializer):
     class Meta:
         model = DealImage
-        fields = ("id", "image", "image_url", "alt_text", "is_primary", "order")
-        
-    def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
+        fields = (
+            "id",
+            "image",
+            "alt_text",
+            "is_primary",
+            "order",
+        )
+        extra_kwargs = {
+            "image": {"write_only": True, "required": False},
+        }
 
 
 class DealSerializer(serializers.ModelSerializer):
@@ -450,16 +457,8 @@ class DealListSerializer(serializers.ModelSerializer):
         return getattr(obj.restaurant, "_distance_miles", None) or getattr(obj, "_distance_miles", None)
 
     def get_primary_image(self, obj):
-        primary_img = obj.images.filter(is_primary=True).first()
-        if not primary_img:
-            primary_img = obj.images.first()
-        if primary_img and primary_img.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(primary_img.image.url)
-            return primary_img.image.url
-        return None
-    
+        return _get_primary_deal_image_url(obj, self.context.get("request"))
+
     def get_is_active(self, obj):
         return obj.is_active_now()
 
@@ -799,24 +798,25 @@ class BookingNoShowResponseSerializer(serializers.ModelSerializer):
         model = Booking
         fields = ("booking_id", "status", "no_show_reason", "no_show_notes", "updated_at")
 
-class MenuItemSerializer(serializers.ModelSerializer):
-    image_url = serializers.SerializerMethodField()
-    
+class MenuItemSerializer(ProcessedImageOutputMixin, serializers.ModelSerializer):
     class Meta:
         model = MenuItem
         fields = (
-            "id", "name", "description", "price", "is_vegetarian",
-            "is_vegan", "is_gluten_free", "is_available", "image",
-            "image_url", "order", "category"
+            "id",
+            "name",
+            "description",
+            "price",
+            "is_vegetarian",
+            "is_vegan",
+            "is_gluten_free",
+            "is_available",
+            "image",
+            "order",
+            "category",
         )
-        
-    def get_image_url(self, obj):
-        if obj.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
+        extra_kwargs = {
+            "image": {"write_only": True, "required": False},
+        }
 
 
 class MenuItemCreateSerializer(serializers.ModelSerializer):
@@ -1047,13 +1047,7 @@ class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
         return round(float(dist_miles), 2) if dist_miles is not None else None
 
     def get_image(self, obj):
-        primary_img = obj.images.filter(is_primary=True).first() or obj.images.first()
-        if primary_img and primary_img.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(primary_img.image.url)
-            return primary_img.image.url
-        return None
+        return _get_primary_restaurant_image_url(obj, self.context.get("request"))
 
     def get_is_favourite(self, obj):
         request = self.context.get("request")

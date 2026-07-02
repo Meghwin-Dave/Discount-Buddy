@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 
+from core.mixins import ProcessedImageMixin
+
 
 class TimeStampedModel(models.Model):
     created_at = models.DateTimeField(default=timezone.now, editable=False)
@@ -16,7 +18,7 @@ class SoftDeleteModel(models.Model):
     class Meta:
         abstract = True
 
-class Banner(TimeStampedModel, SoftDeleteModel):
+class Banner(ProcessedImageMixin, TimeStampedModel, SoftDeleteModel):
     is_visible = models.BooleanField(default=True)
     priority = models.IntegerField(default=0, help_text="Higher numbers appear first/have higher priority")
     image = models.ImageField(upload_to='banners/', null=True, blank=True)

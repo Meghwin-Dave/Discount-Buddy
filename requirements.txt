@@ -10,6 +10,7 @@ google-auth==2.36.0
 inflection==0.5.1
 packaging==26.0
 Pillow==12.1.0
+pillow-heif>=0.21.0
 qrcode==7.4.2
 PyJWT==2.10.1
 python-dotenv==1.2.1

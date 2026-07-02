@@ -1,8 +1,17 @@
+from datetime import datetime
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
 
 from core.models import TimeStampedModel
+from core.mixins.processed_image import ProcessedImageBehaviorMixin
+from core.utils.image_paths import processed_large_upload_to, processed_medium_upload_to
+
+
+def profile_picture_source_upload_to(instance, filename):
+    date_path = datetime.now().strftime("%Y/%m/%d")
+    return f"profile_pictures/{date_path}/{filename}"
 
 
 class User(AbstractUser):
@@ -17,7 +26,7 @@ class User(AbstractUser):
         return self.email
 
 
-class UserProfile(models.Model):
+class UserProfile(ProcessedImageBehaviorMixin, models.Model):
     ROLE_ADMIN = "admin"
     ROLE_MERCHANT = "merchant"
     ROLE_CUSTOMER = "customer"
@@ -33,7 +42,22 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_CUSTOMER)
     phone_number = models.CharField(max_length=20, blank=True)
-    profile_picture = models.ImageField(upload_to="profile_pictures/", null=True, blank=True)
+    profile_picture = models.ImageField(
+        upload_to=profile_picture_source_upload_to,
+        null=True,
+        blank=True,
+        help_text="Upload intake only; cleared after WebP processing.",
+    )
+    profile_picture_medium = models.ImageField(
+        upload_to=processed_medium_upload_to,
+        null=True,
+        blank=True,
+    )
+    profile_picture_large = models.ImageField(
+        upload_to=processed_large_upload_to,
+        null=True,
+        blank=True,
+    )
     marketing_opt_in = models.BooleanField(default=True)
 
     def __str__(self) -> str:
@@ -89,4 +113,3 @@ class PasswordResetOTP(TimeStampedModel):
     @property
     def is_expired(self) -> bool:
         return timezone.now() > self.expires_at
-

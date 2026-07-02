@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     "dj_rest_auth",
     "dj_rest_auth.registration",
     # Local apps
-    "core",
+    "core.apps.CoreConfig",
     "users",
     "vouchers",
     "wallet",
@@ -359,4 +359,22 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/5"),
     },
 }
+
+# ============================================================================
+# IMAGE PROCESSING
+# ============================================================================
+IMAGE_MAX_SIZE_MB = int(os.environ.get("IMAGE_MAX_SIZE_MB", "10"))
+IMAGE_MAX_PIXELS = int(os.environ.get("IMAGE_MAX_PIXELS", "40000000"))
+
+IMAGE_SIZES = {
+    "medium": 800,
+    "large": 1920,
+}
+
+WEBP_QUALITY = {
+    "medium": int(os.environ.get("WEBP_QUALITY_MEDIUM", "82")),
+    "large": int(os.environ.get("WEBP_QUALITY_LARGE", "85")),
+}
+
+WEBP_METHOD = int(os.environ.get("WEBP_METHOD", "4"))
 
