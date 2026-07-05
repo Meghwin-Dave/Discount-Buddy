@@ -25,10 +25,37 @@ class UserProfileSerializer(ProfilePictureOutputMixin, serializers.ModelSerializ
 
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True)
+    loyalty_stats = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("id", "email", "username", "first_name", "last_name", "is_merchant", "is_customer", "profile")
+        fields = ("id", "email", "username", "first_name", "last_name", "is_merchant", "is_customer", "profile", "loyalty_stats")
+
+    def get_loyalty_stats(self, obj):
+        from restaurants.models import UserRestaurantLoyalty, Restaurant
+        from restaurants.serializers import RestaurantListSerializer
+
+        # Get all loyalty records where current_cycle_redemptions > 0
+        active_loyalty_records = UserRestaurantLoyalty.objects.filter(
+            user=obj,
+            current_cycle_redemptions__gt=0,
+            restaurant__loyalty_card_enabled=True,
+            restaurant__loyalty_required_redemptions__gt=0
+        )
+        
+        restaurant_ids = active_loyalty_records.values_list('restaurant_id', flat=True)
+        restaurants = Restaurant.objects.filter(id__in=restaurant_ids).distinct()
+        
+        # We need a request object in context for distance calculation (which RestaurantListSerializer expects)
+        request = self.context.get('request')
+        serializer_context = {'request': request} if request else {}
+        
+        claimed_restaurants_data = RestaurantListSerializer(restaurants, many=True, context=serializer_context).data
+        
+        return {
+            "active_restaurants_count": len(claimed_restaurants_data),
+            "claimed_restaurants": claimed_restaurants_data
+        }
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):

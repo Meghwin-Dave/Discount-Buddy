@@ -461,7 +461,15 @@ class DealUse(TimeStampedModel):
     """
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="deal_uses")
-    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="deal_uses")
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="deal_uses", null=True, blank=True)
+    restaurant = models.ForeignKey(
+        Restaurant, on_delete=models.CASCADE, related_name="deal_uses", null=True, blank=True,
+        help_text="Required if deal is null (loyalty-only visit)"
+    )
+    is_loyalty_only = models.BooleanField(
+        default=False,
+        help_text="True if this is a loyalty-only visit (no deal attached)"
+    )
     used_at = models.DateTimeField(default=timezone.now)
     restaurant_confirmed = models.BooleanField(
         default=False,
@@ -923,6 +931,21 @@ class UserRestaurantLoyalty(TimeStampedModel):
     )
     reward_eligible_at = models.DateTimeField(null=True, blank=True)
     last_reward_claimed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Reward QR code fields
+    reward_code = models.CharField(
+        max_length=6,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="6-digit code for claiming the loyalty reward",
+    )
+    reward_qr_code = models.ImageField(
+        upload_to="reward_qr_codes/%Y/%m/%d/",
+        null=True,
+        blank=True,
+        help_text="QR code for claiming the loyalty reward",
+    )
 
     class Meta:
         unique_together = [["user", "restaurant"]]

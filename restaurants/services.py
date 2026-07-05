@@ -85,14 +85,17 @@ def _build_qr_image(payload: str) -> ContentFile:
 
 @transaction.atomic
 def create_deal_use_with_redemption(
-    *, user: User, deal: Deal, notes: str | None = ""
+    *, user: User, deal: Deal | None = None, restaurant: Restaurant | None = None, is_loyalty_only: bool = False, notes: str | None = ""
 ) -> DealUse:
     """
-    Create a DealUse record for a user/deal pair, assigning a unique
-    6-digit redemption code and generating a QR code image.
+    Create a DealUse record for a user/deal pair (or user/restaurant for loyalty-only),
+    assigning a unique 6-digit redemption code and generating a QR code image.
 
-    Also increments the Deal.used_count atomically.
+    Also increments the Deal.used_count atomically if a deal is provided.
     """
+    if deal and not restaurant:
+        restaurant = deal.restaurant
+
     # Create the DealUse with a unique redemption code, retrying on collisions.
     while True:
         redemption_code = _generate_unique_redemption_code()
@@ -100,6 +103,8 @@ def create_deal_use_with_redemption(
             deal_use = DealUse.objects.create(
                 user=user,
                 deal=deal,
+                restaurant=restaurant,
+                is_loyalty_only=is_loyalty_only,
                 notes=notes or "",
                 redemption_code=redemption_code,
             )
@@ -114,13 +119,13 @@ def create_deal_use_with_redemption(
     qr_file = _build_qr_image(qr_payload)
     deal_use.qr_code.save(qr_file.name, qr_file, save=True)
 
-    # Increment used_count atomically.
-    from django.db.models import F
+    # Increment used_count atomically if deal exists.
+    if deal:
+        from django.db.models import F
 
-    Deal.objects.filter(pk=deal.pk).update(used_count=F("used_count") + 1)
-
-    # Refresh used_count on the instance if needed by callers.
-    deal.refresh_from_db(fields=["used_count"])
+        Deal.objects.filter(pk=deal.pk).update(used_count=F("used_count") + 1)
+        # Refresh used_count on the instance if needed by callers.
+        deal.refresh_from_db(fields=["used_count"])
 
     return deal_use
 
@@ -169,11 +174,11 @@ def build_loyalty_progress_payload(
 @transaction.atomic
 def update_loyalty_on_redemption(*, deal_use: DealUse) -> LoyaltyUpdateResult:
     """
-    Increment loyalty progress when a deal is successfully redeemed.
+    Increment loyalty progress when a deal or loyalty-only visit is successfully redeemed.
     Creates audit records and awards eligibility when the threshold is reached.
     """
-    restaurant = deal_use.deal.restaurant
-    if not restaurant.loyalty_card_enabled or not restaurant.loyalty_required_redemptions:
+    restaurant = deal_use.restaurant or (deal_use.deal.restaurant if deal_use.deal else None)
+    if not restaurant or not restaurant.loyalty_card_enabled or not restaurant.loyalty_required_redemptions:
         return LoyaltyUpdateResult()
 
     required = restaurant.loyalty_required_redemptions
@@ -205,6 +210,16 @@ def update_loyalty_on_redemption(*, deal_use: DealUse) -> LoyaltyUpdateResult:
         loyalty.reward_eligible_at = timezone.now()
         record_status = LoyaltyRedemptionRecord.STATUS_REWARD_EARNED
         reward_just_earned = True
+        
+        # Generate the reward QR and code
+        while True:
+            reward_code = _generate_unique_redemption_code()
+            if not UserRestaurantLoyalty.objects.filter(reward_code=reward_code).exists():
+                loyalty.reward_code = reward_code
+                break
+        qr_payload = f"LOYALTYREWARD:{loyalty.id}:{loyalty.reward_code}"
+        qr_file = _build_qr_image(qr_payload)
+        loyalty.reward_qr_code.save(qr_file.name, qr_file, save=False)
 
     loyalty.save(
         update_fields=[
@@ -212,6 +227,8 @@ def update_loyalty_on_redemption(*, deal_use: DealUse) -> LoyaltyUpdateResult:
             "total_lifetime_redemptions",
             "is_reward_eligible",
             "reward_eligible_at",
+            "reward_code",
+            "reward_qr_code",
             "updated_at",
         ]
     )
@@ -230,12 +247,45 @@ def update_loyalty_on_redemption(*, deal_use: DealUse) -> LoyaltyUpdateResult:
 
 @transaction.atomic
 def claim_loyalty_reward(
-    *, actor: User, restaurant: Restaurant, customer_user: User
+    *, actor: User, reward_code: str | None = None, qr_data: str | None = None, restaurant: Restaurant | None = None, customer_user: User | None = None
 ) -> tuple[bool, str, UserRestaurantLoyalty | None]:
     """
     Mark a customer's loyalty reward as claimed (merchant action).
     Resets the current cycle, carrying over excess redemptions if any.
+    Can be claimed via reward_code, qr_data, or (legacy) restaurant + customer_user.
     """
+    loyalty = None
+    if qr_data:
+        parts = qr_data.split(":")
+        if len(parts) != 3 or parts[0] != "LOYALTYREWARD":
+            return False, "Invalid QR data format.", None
+        _, id_str, code = parts
+        try:
+            loyalty = UserRestaurantLoyalty.objects.select_for_update().get(id=int(id_str), reward_code=code)
+        except (ValueError, UserRestaurantLoyalty.DoesNotExist):
+            return False, "Loyalty reward not found.", None
+    elif reward_code:
+        try:
+            loyalty = UserRestaurantLoyalty.objects.select_for_update().get(reward_code=reward_code)
+        except UserRestaurantLoyalty.DoesNotExist:
+            return False, "Loyalty reward not found.", None
+    elif restaurant and customer_user:
+        try:
+            loyalty = UserRestaurantLoyalty.objects.select_for_update().get(
+                user=customer_user,
+                restaurant=restaurant,
+            )
+        except UserRestaurantLoyalty.DoesNotExist:
+            return False, "No loyalty record found for this customer.", None
+    else:
+        return False, "Either reward_code, qr_data, or both restaurant and customer_user must be provided.", None
+
+    if not loyalty:
+        return False, "Loyalty reward not found.", None
+
+    customer_user = customer_user or loyalty.user
+    restaurant = restaurant or loyalty.restaurant
+
     if not restaurant.loyalty_card_enabled:
         return False, "Loyalty card is not enabled for this restaurant.", None
 
@@ -252,23 +302,23 @@ def claim_loyalty_reward(
     if not owns_restaurant:
         return False, "You are not allowed to manage loyalty for this restaurant.", None
 
-    try:
-        loyalty = UserRestaurantLoyalty.objects.select_for_update().get(
-            user=customer_user,
-            restaurant=restaurant,
-        )
-    except UserRestaurantLoyalty.DoesNotExist:
-        return False, "No loyalty record found for this customer.", None
-
     if not loyalty.is_reward_eligible:
         return False, "This customer is not eligible for a loyalty reward.", None
 
     excess = loyalty.current_cycle_redemptions - required
-    loyalty.current_cycle_redemptions = max(excess, 0)
+    # the user requested to reset the counter to 0 on scan
+    loyalty.current_cycle_redemptions = 0
     loyalty.is_reward_eligible = False
     loyalty.rewards_earned += 1
     loyalty.last_reward_claimed_at = timezone.now()
     loyalty.reward_eligible_at = None
+    
+    # Clear the QR code
+    loyalty.reward_code = None
+    if loyalty.reward_qr_code:
+        loyalty.reward_qr_code.delete(save=False)
+        loyalty.reward_qr_code = None
+
     loyalty.save(
         update_fields=[
             "current_cycle_redemptions",
@@ -276,6 +326,8 @@ def claim_loyalty_reward(
             "rewards_earned",
             "last_reward_claimed_at",
             "reward_eligible_at",
+            "reward_code",
+            "reward_qr_code",
             "updated_at",
         ]
     )
@@ -358,16 +410,20 @@ def redeem_deal(
 
     deal = deal_use.deal
 
-    # Deal still valid?
-    if not deal.is_active_now():
-        return RedemptionResult(False, "This deal is no longer valid.", deal_use)
+    # Deal still valid? (Skip if loyalty-only)
+    if not deal_use.is_loyalty_only and deal:
+        if not deal.is_active_now():
+            return RedemptionResult(False, "This deal is no longer valid.", deal_use)
 
     # Verify that the actor is allowed to redeem for this restaurant.
-    restaurant: Restaurant = deal.restaurant
+    restaurant: Restaurant = deal_use.restaurant or (deal.restaurant if deal else None)
+
+    if not restaurant:
+        return RedemptionResult(False, "Restaurant not found for this deal.", deal_use)
 
     # Validate restaurant_id if provided
     if restaurant_id and restaurant.id != int(restaurant_id):
-        return RedemptionResult(False, f"This deal belongs to '{restaurant.name}' and cannot be redeemed at the selected restaurant.", deal_use)
+        return RedemptionResult(False, f"This redemption belongs to '{restaurant.name}' and cannot be redeemed at the selected restaurant.", deal_use)
 
     # The actor can be either:
     # - a user linked via RestaurantProfile
@@ -387,7 +443,7 @@ def redeem_deal(
     deal_use.redeemed_by = actor
     deal_use.restaurant_confirmed = True
     
-    if price is not None:
+    if price is not None and deal:
         price_dec = Decimal(str(price))
         deal_use.price = price_dec
         
@@ -419,6 +475,11 @@ def redeem_deal(
         
         deal_use.discount_amount_saved = discount_amount_saved
         deal_use.final_bill_amount = final_bill_amount
+    elif price is not None and deal_use.is_loyalty_only:
+        price_dec = Decimal(str(price))
+        deal_use.price = price_dec
+        deal_use.final_bill_amount = price_dec
+        deal_use.discount_amount_saved = Decimal("0.00")
 
     if people_count is not None:
         deal_use.people_count = people_count

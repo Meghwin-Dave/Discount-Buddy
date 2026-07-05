@@ -596,6 +596,33 @@ class DealUseCreateSerializer(serializers.ModelSerializer):
         return create_deal_use_with_redemption(user=user, deal=deal, notes=notes)
 
 
+class LoyaltyOnlyUseCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating loyalty-only deal uses"""
+    
+    class Meta:
+        model = DealUse
+        fields = ("restaurant", "notes")
+        
+    def validate_restaurant(self, value):
+        if not value.loyalty_card_enabled or not value.loyalty_required_redemptions:
+            raise serializers.ValidationError("Loyalty card is not enabled or configured for this restaurant.")
+        return value
+    
+    def create(self, validated_data):
+        from .services import create_deal_use_with_redemption
+
+        user = self.context["request"].user
+        restaurant = validated_data["restaurant"]
+        notes = validated_data.get("notes", "")
+
+        return create_deal_use_with_redemption(
+            user=user, 
+            restaurant=restaurant, 
+            is_loyalty_only=True, 
+            notes=notes
+        )
+
+
 # New serializers for mobile app features
 
 

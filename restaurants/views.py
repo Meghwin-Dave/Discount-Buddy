@@ -53,6 +53,7 @@ from .serializers import (
     SavedDealSerializer,
     DealUseSerializer,
     DealUseCreateSerializer,
+    LoyaltyOnlyUseCreateSerializer,
     DealRedemptionRequestSerializer,
     CuisineSerializer,
     ReviewSerializer,
@@ -1710,12 +1711,13 @@ class DealRedemptionView(APIView):
         payload.update({"success": True, "reason": result.reason})
 
         if result.loyalty_result and result.loyalty_result.loyalty:
-            restaurant = deal_use.deal.restaurant
-            payload["loyalty"] = build_loyalty_progress_payload(
-                restaurant=restaurant,
-                loyalty=result.loyalty_result.loyalty,
-            )
-            payload["loyalty_reward_just_earned"] = result.loyalty_result.reward_just_earned
+            restaurant = deal_use.restaurant or (deal_use.deal.restaurant if deal_use.deal else None)
+            if restaurant:
+                payload["loyalty"] = build_loyalty_progress_payload(
+                    restaurant=restaurant,
+                    loyalty=result.loyalty_result.loyalty,
+                )
+                payload["loyalty_reward_just_earned"] = result.loyalty_result.reward_just_earned
 
         return Response(payload, status=status.HTTP_200_OK)
 
@@ -2660,26 +2662,35 @@ class MerchantLoyaltyClaimRewardView(APIView):
     permission_classes = [IsRestaurant]
 
     def post(self, request):
-        serializer = LoyaltyRewardClaimSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        restaurant_id = serializer.validated_data["restaurant_id"]
-        user_id = serializer.validated_data["user_id"]
-
-        restaurant_qs = get_merchant_restaurants_queryset(request.user)
-        try:
-            restaurant = restaurant_qs.get(pk=restaurant_id)
-        except Restaurant.DoesNotExist:
-            return Response({"error": "Restaurant not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        from users.models import User
-        try:
-            customer = User.objects.get(pk=user_id)
-        except User.DoesNotExist:
-            return Response({"error": "Customer not found."}, status=status.HTTP_404_NOT_FOUND)
+        qr_data = request.data.get("qr_data")
+        reward_code = request.data.get("reward_code")
+        
+        restaurant = None
+        customer = None
+        
+        if not qr_data and not reward_code:
+            serializer = LoyaltyRewardClaimSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+    
+            restaurant_id = serializer.validated_data["restaurant_id"]
+            user_id = serializer.validated_data["user_id"]
+    
+            restaurant_qs = get_merchant_restaurants_queryset(request.user)
+            try:
+                restaurant = restaurant_qs.get(pk=restaurant_id)
+            except Restaurant.DoesNotExist:
+                return Response({"error": "Restaurant not found."}, status=status.HTTP_404_NOT_FOUND)
+    
+            from users.models import User
+            try:
+                customer = User.objects.get(pk=user_id)
+            except User.DoesNotExist:
+                return Response({"error": "Customer not found."}, status=status.HTTP_404_NOT_FOUND)
 
         success, message, loyalty = claim_loyalty_reward(
             actor=request.user,
+            qr_data=qr_data,
+            reward_code=reward_code,
             restaurant=restaurant,
             customer_user=customer,
         )
