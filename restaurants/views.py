@@ -350,6 +350,24 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         
         serializer = SavedRestaurantSerializer(saved, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated], url_path="loyalty_visit")
+    def loyalty_visit(self, request, slug=None):
+        """
+        Create a loyalty-only visit for the current user at this restaurant.
+
+        Generates a redemption code and QR that the merchant scans via the
+        standard deal redemption endpoint to award a loyalty point.
+        """
+        restaurant = self.get_object()
+        serializer = LoyaltyOnlyUseCreateSerializer(
+            data={"restaurant": restaurant.id, "notes": request.data.get("notes", "")},
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        deal_use = serializer.save()
+        response_serializer = DealUseSerializer(deal_use, context={"request": request})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
     
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def saved(self, request):
@@ -699,7 +717,7 @@ class DealUseViewSet(viewsets.ReadOnlyModelViewSet):
     
     def get_queryset(self):
         return DealUse.objects.filter(user=self.request.user).select_related(
-            "deal", "deal__restaurant"
+            "deal", "deal__restaurant", "restaurant"
         )
 
 
@@ -2588,11 +2606,18 @@ class UserLoyaltyCardViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return UserRestaurantLoyalty.objects.filter(
+        queryset = UserRestaurantLoyalty.objects.filter(
             user=self.request.user,
             restaurant__loyalty_card_enabled=True,
             restaurant__is_active=True,
-        ).select_related("restaurant", "user")
+        ).select_related("restaurant", "user").prefetch_related("restaurant__images")
+
+        if self.action == "list":
+            queryset = queryset.filter(
+                Q(current_cycle_redemptions__gt=0) | Q(is_reward_eligible=True)
+            ).order_by("-is_reward_eligible", "-current_cycle_redemptions", "-updated_at")
+
+        return queryset
 
     def get_object(self):
         restaurant_id = self.kwargs.get("pk")

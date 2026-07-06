@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -32,29 +33,21 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "username", "first_name", "last_name", "is_merchant", "is_customer", "profile", "loyalty_stats")
 
     def get_loyalty_stats(self, obj):
-        from restaurants.models import UserRestaurantLoyalty, Restaurant
-        from restaurants.serializers import RestaurantListSerializer
+        from restaurants.models import UserRestaurantLoyalty
 
-        # Get all loyalty records where current_cycle_redemptions > 0
-        active_loyalty_records = UserRestaurantLoyalty.objects.filter(
+        base_qs = UserRestaurantLoyalty.objects.filter(
             user=obj,
-            current_cycle_redemptions__gt=0,
             restaurant__loyalty_card_enabled=True,
-            restaurant__loyalty_required_redemptions__gt=0
+            restaurant__loyalty_required_redemptions__gt=0,
+            restaurant__is_active=True,
         )
-        
-        restaurant_ids = active_loyalty_records.values_list('restaurant_id', flat=True)
-        restaurants = Restaurant.objects.filter(id__in=restaurant_ids).distinct()
-        
-        # We need a request object in context for distance calculation (which RestaurantListSerializer expects)
-        request = self.context.get('request')
-        serializer_context = {'request': request} if request else {}
-        
-        claimed_restaurants_data = RestaurantListSerializer(restaurants, many=True, context=serializer_context).data
-        
+        active_qs = base_qs.filter(
+            Q(current_cycle_redemptions__gt=0) | Q(is_reward_eligible=True)
+        )
+
         return {
-            "active_restaurants_count": len(claimed_restaurants_data),
-            "claimed_restaurants": claimed_restaurants_data
+            "active_restaurants_count": active_qs.count(),
+            "reward_eligible_count": active_qs.filter(is_reward_eligible=True).count(),
         }
 
 

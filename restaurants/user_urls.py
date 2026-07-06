@@ -44,6 +44,11 @@ urlpatterns = [
     # Mobile app endpoints
     path("home", HomeScreenView.as_view(), name="home-screen"),
     path("profile/stats", ProfileStatsView.as_view(), name="profile-stats"),
+    path(
+        "<slug>/loyalty_visit",
+        RestaurantViewSet.as_view({"post": "loyalty_visit"}),
+        name="restaurant-loyalty-visit-short",
+    ),
     # Router URLs
     path("", include(router.urls)),
 ]

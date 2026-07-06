@@ -193,6 +193,28 @@ class NotificationService:
         )
 
     @staticmethod
+    def send_loyalty_visit_redeemed(user: User, restaurant, deal_use) -> Notification:
+        """Send notification when a loyalty-only visit is redeemed at the restaurant."""
+        title = "Loyalty Visit Recorded"
+        message = f"Your loyalty visit at {restaurant.name} was recorded."
+
+        payload = {
+            "deal_use_id": str(deal_use.id),
+            "restaurant_id": str(restaurant.id),
+            "is_loyalty_only": True,
+        }
+
+        return NotificationService.create_notification(
+            user=user,
+            title=title,
+            message=message,
+            notification_type="LOYALTY_VISIT_REDEEMED",
+            payload=payload,
+            source_id=deal_use.id,
+            source_type="deal_use",
+        )
+
+    @staticmethod
     def mark_as_read(notification_id: str, user: User) -> bool:
         """
         Mark a specific notification as read.
@@ -434,7 +456,7 @@ class NotificationService:
     def notify_merchant_deal_redeemed(deal_use) -> int:
         """
         Notify restaurant owner(s) when a customer successfully redeems a deal
-        at their restaurant.
+        or loyalty-only visit at their restaurant.
 
         Args:
             deal_use: DealUse instance after is_redeemed is set to True
@@ -442,7 +464,10 @@ class NotificationService:
         Returns:
             Number of notifications created
         """
-        restaurant = deal_use.deal.restaurant
+        restaurant = deal_use.restaurant or (deal_use.deal.restaurant if deal_use.deal else None)
+        if not restaurant:
+            return 0
+
         owners = NotificationService._get_restaurant_owners(restaurant)
 
         if not owners:
@@ -452,18 +477,28 @@ class NotificationService:
             deal_use.user.get_full_name() or deal_use.user.username or deal_use.user.email
         )
 
-        title = "Deal Redeemed at Your Restaurant 🎉"
-        message = (
-            f"{customer_name} just redeemed \"{deal_use.deal.title}\" at {restaurant.name}."
-        )
-
-        payload = {
-            "deal_use_id": str(deal_use.id),
-            "deal_id": str(deal_use.deal.id),
-            "restaurant_id": str(restaurant.id),
-            "customer_name": customer_name,
-            "redemption_code": deal_use.redemption_code,
-        }
+        if deal_use.is_loyalty_only or not deal_use.deal:
+            title = "Loyalty Visit Recorded"
+            message = f"{customer_name} checked in for a loyalty point at {restaurant.name}."
+            payload = {
+                "deal_use_id": str(deal_use.id),
+                "restaurant_id": str(restaurant.id),
+                "customer_name": customer_name,
+                "redemption_code": deal_use.redemption_code,
+                "is_loyalty_only": True,
+            }
+        else:
+            title = "Deal Redeemed at Your Restaurant 🎉"
+            message = (
+                f"{customer_name} just redeemed \"{deal_use.deal.title}\" at {restaurant.name}."
+            )
+            payload = {
+                "deal_use_id": str(deal_use.id),
+                "deal_id": str(deal_use.deal.id),
+                "restaurant_id": str(restaurant.id),
+                "customer_name": customer_name,
+                "redemption_code": deal_use.redemption_code,
+            }
 
         count = 0
         for owner in owners:

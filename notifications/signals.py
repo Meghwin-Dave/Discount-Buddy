@@ -116,27 +116,53 @@ def notify_deal_redeemed(sender, instance, created, **kwargs):
     if instance.is_redeemed:
         from .models import Notification
 
-        # ── Customer notification ──────────────────────────────────────────
-        already_notified_customer = Notification.objects.filter(
-            source_id=instance.deal.id,
-            source_type='deal',
-            notification_type='DEAL_REDEEMED',
-            user=instance.user
-        ).exists()
+        restaurant = instance.restaurant or (instance.deal.restaurant if instance.deal else None)
+        if not restaurant:
+            return
 
-        if not already_notified_customer:
-            try:
-                NotificationService.send_deal_redeemed(
-                    user=instance.user,
-                    deal=instance.deal,
-                    restaurant=instance.deal.restaurant
-                )
-                logger.info(
-                    f"Sent deal redeemed notification for deal {instance.deal.id} "
-                    f"to user {instance.user.email}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to send deal redeemed notification: {str(e)}")
+        # ── Customer notification ──────────────────────────────────────────
+        if instance.deal:
+            already_notified_customer = Notification.objects.filter(
+                source_id=instance.deal.id,
+                source_type='deal',
+                notification_type='DEAL_REDEEMED',
+                user=instance.user
+            ).exists()
+
+            if not already_notified_customer:
+                try:
+                    NotificationService.send_deal_redeemed(
+                        user=instance.user,
+                        deal=instance.deal,
+                        restaurant=restaurant,
+                    )
+                    logger.info(
+                        f"Sent deal redeemed notification for deal {instance.deal.id} "
+                        f"to user {instance.user.email}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send deal redeemed notification: {str(e)}")
+        else:
+            already_notified_customer = Notification.objects.filter(
+                source_id=instance.id,
+                source_type='deal_use',
+                notification_type='LOYALTY_VISIT_REDEEMED',
+                user=instance.user,
+            ).exists()
+
+            if not already_notified_customer:
+                try:
+                    NotificationService.send_loyalty_visit_redeemed(
+                        user=instance.user,
+                        restaurant=restaurant,
+                        deal_use=instance,
+                    )
+                    logger.info(
+                        f"Sent loyalty visit redeemed notification for deal_use {instance.id} "
+                        f"to user {instance.user.email}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send loyalty visit redeemed notification: {str(e)}")
 
         # ── Merchant notification ──────────────────────────────────────────
         already_notified_merchant = Notification.objects.filter(
@@ -153,7 +179,8 @@ def notify_deal_redeemed(sender, instance, created, **kwargs):
                 )
 
                 # ── Check for earnings milestones after each redemption ────
-                _check_merchant_earnings_milestone(instance.deal.restaurant)
+                if instance.deal:
+                    _check_merchant_earnings_milestone(restaurant)
 
             except Exception as e:
                 logger.error(f"Failed to send merchant deal-redeemed notification: {str(e)}")

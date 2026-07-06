@@ -340,6 +340,8 @@ class RestaurantListSerializer(serializers.ModelSerializer):
         
     def get_primary_image(self, obj):
         return _get_primary_restaurant_image_url(obj, self.context.get("request"))
+
+    def get_leaderboard_score(self, obj):
         return obj.get_leaderboard_score()
 
     def get_average_rating(self, obj):
@@ -525,16 +527,17 @@ class SavedDealSerializer(serializers.ModelSerializer):
 
 
 class DealUseSerializer(serializers.ModelSerializer):
-    restaurant_id = serializers.IntegerField(source="deal.restaurant_id", read_only=True)
-    deal = DealListSerializer(read_only=True)
+    restaurant = serializers.SerializerMethodField()
+    deal = DealListSerializer(read_only=True, allow_null=True)
     qr_code_url = serializers.SerializerMethodField()
 
     class Meta:
         model = DealUse
         fields = (
             "id",
-            "restaurant_id",
+            "restaurant",
             "deal",
+            "is_loyalty_only",
             "used_at",
             "restaurant_confirmed",
             "notes",
@@ -556,6 +559,13 @@ class DealUseSerializer(serializers.ModelSerializer):
             "is_redeemed",
             "redeemed_at",
         )
+
+    def get_restaurant(self, obj):
+        if obj.restaurant_id:
+            return obj.restaurant_id
+        if obj.deal_id:
+            return obj.deal.restaurant_id
+        return None
 
     def get_qr_code_url(self, obj):
         if not obj.qr_code:
@@ -1236,16 +1246,29 @@ class UserLoyaltyCardSerializer(serializers.ModelSerializer):
     restaurant_id = serializers.IntegerField(source="restaurant.id", read_only=True)
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     restaurant_slug = serializers.CharField(source="restaurant.slug", read_only=True)
+    restaurant_image = serializers.SerializerMethodField()
+    reward_qr_url = serializers.SerializerMethodField()
     loyalty_program = serializers.SerializerMethodField()
 
     class Meta:
         model = UserRestaurantLoyalty
         fields = (
-            "id", "restaurant_id", "restaurant_name", "restaurant_slug",
+            "id", "restaurant_id", "restaurant_name", "restaurant_slug", "restaurant_image",
             "current_cycle_redemptions", "total_lifetime_redemptions", "rewards_earned",
-            "is_reward_eligible", "reward_eligible_at", "last_reward_claimed_at",
-            "loyalty_program", "created_at", "updated_at",
+            "is_reward_eligible", "reward_eligible_at", "reward_code", "reward_qr_url",
+            "last_reward_claimed_at", "loyalty_program", "created_at", "updated_at",
         )
+
+    def get_restaurant_image(self, obj):
+        return _get_primary_restaurant_image_url(obj.restaurant, self.context.get("request"))
+
+    def get_reward_qr_url(self, obj):
+        if not obj.is_reward_eligible or not obj.reward_qr_code:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.reward_qr_code.url)
+        return obj.reward_qr_code.url
 
     def get_loyalty_program(self, obj):
         return build_loyalty_progress_payload(restaurant=obj.restaurant, loyalty=obj)
