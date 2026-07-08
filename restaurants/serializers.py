@@ -528,6 +528,7 @@ class SavedDealSerializer(serializers.ModelSerializer):
 
 class DealUseSerializer(serializers.ModelSerializer):
     restaurant = serializers.SerializerMethodField()
+    restaurant_name = serializers.SerializerMethodField()
     deal = DealListSerializer(read_only=True, allow_null=True)
     qr_code_url = serializers.SerializerMethodField()
 
@@ -536,6 +537,7 @@ class DealUseSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "restaurant",
+            "restaurant_name",
             "deal",
             "is_loyalty_only",
             "used_at",
@@ -560,12 +562,20 @@ class DealUseSerializer(serializers.ModelSerializer):
             "redeemed_at",
         )
 
-    def get_restaurant(self, obj):
+    def _resolve_restaurant(self, obj):
         if obj.restaurant_id:
-            return obj.restaurant_id
-        if obj.deal_id:
-            return obj.deal.restaurant_id
+            return obj.restaurant
+        if obj.deal_id and obj.deal:
+            return obj.deal.restaurant
         return None
+
+    def get_restaurant(self, obj):
+        restaurant = self._resolve_restaurant(obj)
+        return restaurant.id if restaurant else None
+
+    def get_restaurant_name(self, obj):
+        restaurant = self._resolve_restaurant(obj)
+        return restaurant.name if restaurant else None
 
     def get_qr_code_url(self, obj):
         if not obj.qr_code:
