@@ -392,13 +392,11 @@ def redeem_deal(
             _, id_str, code = parts
             deal_use = (
                 DealUse.objects.select_for_update()
-                .select_related("deal", "deal__restaurant", "user")
                 .get(id=int(id_str), redemption_code=code)
             )
         else:
             deal_use = (
                 DealUse.objects.select_for_update()
-                .select_related("deal", "deal__restaurant", "user")
                 .get(redemption_code=redemption_code)
             )
     except (ValueError, DealUse.DoesNotExist):
