@@ -2,6 +2,7 @@ from django.utils import timezone
 from django.core.cache import cache
 from rest_framework import generics, permissions, filters
 
+from users.merchant_utils import get_merchant_for_user
 from users.permissions import ReadOnly, IsMerchant
 from .models import Voucher, Merchant
 from .serializers import VoucherSerializer
@@ -35,24 +36,7 @@ class MerchantVoucherView(generics.ListCreateAPIView):
     permission_classes = [IsMerchant | ReadOnly]
 
     def get_merchant(self):
-        """Get or create Merchant instance for the current user"""
-        from users.models import UserProfile
-        
-        # Check if user has merchant role
-        try:
-            if self.request.user.profile.role != UserProfile.ROLE_MERCHANT:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("User is not a merchant.")
-        except UserProfile.DoesNotExist:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("User profile not found.")
-        
-        # Get or create Merchant instance
-        merchant, created = Merchant.objects.get_or_create(
-            user=self.request.user,
-            defaults={'name': self.request.user.username or self.request.user.email}
-        )
-        return merchant
+        return get_merchant_for_user(self.request.user)
 
     def get_queryset(self):
         return (

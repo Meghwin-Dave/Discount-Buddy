@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
+from users.merchant_utils import get_merchant_for_user, user_is_merchant
 from users.models import UserProfile
 from vouchers.models import Merchant
 from .filters import RestaurantFilter, DealFilter
@@ -731,19 +732,7 @@ class MerchantRestaurantViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
     
     def get_merchant(self):
-        # Check if user has merchant role
-        try:
-            if self.request.user.profile.role != UserProfile.ROLE_MERCHANT:
-                raise PermissionDenied("User is not a merchant.")
-        except UserProfile.DoesNotExist:
-            raise PermissionDenied("User profile not found.")
-        
-        # Get or create Merchant instance
-        merchant, created = Merchant.objects.get_or_create(
-            user=self.request.user,
-            defaults={'name': self.request.user.username or self.request.user.email}
-        )
-        return merchant
+        return get_merchant_for_user(self.request.user)
     
     def get_queryset(self):
         # Get merchant's restaurants
@@ -780,19 +769,7 @@ class MerchantDealViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
     
     def get_merchant(self):
-        # Check if user has merchant role
-        try:
-            if self.request.user.profile.role != UserProfile.ROLE_MERCHANT:
-                raise PermissionDenied("User is not a merchant.")
-        except UserProfile.DoesNotExist:
-            raise PermissionDenied("User profile not found.")
-        
-        # Get or create Merchant instance
-        merchant, created = Merchant.objects.get_or_create(
-            user=self.request.user,
-            defaults={'name': self.request.user.username or self.request.user.email}
-        )
-        return merchant
+        return get_merchant_for_user(self.request.user)
     
     def get_queryset(self):
         # Get deals for merchant's restaurants
@@ -1492,15 +1469,8 @@ class RestaurantManagementViewSet(viewsets.ModelViewSet):
         
         # Check if user is a merchant
         merchant = None
-        try:
-            if hasattr(user, 'profile') and user.profile.role == 'merchant':
-                from vouchers.models import Merchant
-                merchant, _ = Merchant.objects.get_or_create(
-                    user=user,
-                    defaults={'name': user.username or user.email}
-                )
-        except Exception:
-            pass
+        if user_is_merchant(user):
+            merchant = get_merchant_for_user(user)
             
         if merchant:
             serializer.save(merchant=merchant)
@@ -1954,21 +1924,13 @@ class MerchantDashboardView(APIView):
     permission_classes = [IsMerchant]
 
     def get(self, request):
-        from vouchers.models import Merchant
-        from users.models import UserProfile
         from django.db.models import Avg, Sum
         from datetime import timedelta
 
-        try:
-            if request.user.profile.role != UserProfile.ROLE_MERCHANT:
-                return Response({"error": "User is not a merchant."}, status=status.HTTP_403_FORBIDDEN)
-        except UserProfile.DoesNotExist:
-            return Response({"error": "User profile not found."}, status=status.HTTP_403_FORBIDDEN)
+        if not user_is_merchant(request.user):
+            return Response({"error": "User is not a merchant."}, status=status.HTTP_403_FORBIDDEN)
 
-        merchant, _ = Merchant.objects.get_or_create(
-            user=request.user,
-            defaults={'name': request.user.username or request.user.email}
-        )
+        merchant = get_merchant_for_user(request.user)
 
         # Determine restaurants belonging to this merchant
         restaurants_owned = get_merchant_restaurants_queryset(request.user)
@@ -2139,19 +2101,10 @@ class UpdateOccupancyView(APIView):
     permission_classes = [IsMerchant]
 
     def patch(self, request):
-        from vouchers.models import Merchant
-        from users.models import UserProfile
+        if not user_is_merchant(request.user):
+            return Response({"error": "User is not a merchant."}, status=status.HTTP_403_FORBIDDEN)
 
-        try:
-            if request.user.profile.role != UserProfile.ROLE_MERCHANT:
-                return Response({"error": "User is not a merchant."}, status=status.HTTP_403_FORBIDDEN)
-        except UserProfile.DoesNotExist:
-            return Response({"error": "User profile not found."}, status=status.HTTP_403_FORBIDDEN)
-
-        merchant, _ = Merchant.objects.get_or_create(
-            user=request.user,
-            defaults={'name': request.user.username or request.user.email}
-        )
+        merchant = get_merchant_for_user(request.user)
 
         restaurant_id = request.data.get("restaurant_id")
         new_occupancy = request.data.get("occupancy")
