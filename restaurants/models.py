@@ -27,8 +27,8 @@ class City(TimeStampedModel):
     name = models.CharField(max_length=100)
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name="cities")
     slug = models.SlugField(max_length=120, unique=True)
-    latitude = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
     
     class Meta:
@@ -89,8 +89,8 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
     city = models.ForeignKey(City, on_delete=models.CASCADE, related_name="restaurants")
     address = models.CharField(max_length=500)
     postcode = models.CharField(max_length=20, blank=True)
-    latitude = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=12, decimal_places=9, null=True, blank=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
     
     # Contact
     phone = models.CharField(max_length=20, blank=True)

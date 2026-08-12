@@ -142,7 +142,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             user.is_merchant = True
             user.is_customer = False
         user.save()
-        UserProfile.objects.create(user=user, role=role)
+        UserProfile.objects.get_or_create(user=user, defaults={"role": role})
         
         # Auto-create Merchant instance for merchant users
         if role == UserProfile.ROLE_MERCHANT:

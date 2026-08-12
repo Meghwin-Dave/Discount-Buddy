@@ -289,6 +289,36 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         # Support latitude/longitude for distance calculation in list view
         lat = request.query_params.get("latitude") or request.query_params.get("lat")
         lon = request.query_params.get("longitude") or request.query_params.get("lon")
+        
+        ordering = request.query_params.get("ordering", "").lower()
+        sort = request.query_params.get("sort", "").lower()
+
+        # Handle custom nearest sorting in Python since DB doesn't have distance column
+        if lat and lon and ('distance' in ordering or 'nearest' in ordering or 'distance' in sort or 'nearest' in sort):
+            try:
+                lat_float = float(lat)
+                lon_float = float(lon)
+                results = []
+                for restaurant in queryset:
+                    if restaurant.latitude and restaurant.longitude:
+                        dist_km = calculate_distance(lat_float, lon_float, float(restaurant.latitude), float(restaurant.longitude))
+                        if dist_km is not None:
+                            restaurant._distance_miles = km_to_miles(dist_km)
+                    results.append(restaurant)
+                
+                # Sort by distance
+                is_desc = ordering.startswith('-') or sort.startswith('-')
+                results.sort(key=lambda x: getattr(x, '_distance_miles', float('inf')), reverse=is_desc)
+                
+                page = self.paginate_queryset(results)
+                if page is not None:
+                    serializer = self.get_serializer(page, many=True)
+                    return self.get_paginated_response(serializer.data)
+                
+                serializer = self.get_serializer(results, many=True)
+                return Response(serializer.data)
+            except (ValueError, TypeError):
+                pass
 
         page = self.paginate_queryset(queryset)
         if page is not None:
