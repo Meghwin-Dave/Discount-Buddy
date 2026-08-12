@@ -73,6 +73,7 @@ class RestaurantAdmin(admin.ModelAdmin):
         "price_range",
         "occupancy",
         "loyalty_card_enabled",
+        "bookings_enabled",
         "required_visit_gap",
         "last_mystery_visit_date",
         "next_mystery_visit_date",
@@ -119,7 +120,7 @@ class RestaurantAdmin(admin.ModelAdmin):
             },
         ),
         ("Status", {
-            "fields": ("verified", "is_featured", "is_active")
+            "fields": ("verified", "is_featured", "is_active", "bookings_enabled")
         }),
     )
 

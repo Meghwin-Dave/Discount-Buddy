@@ -126,6 +126,11 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
     # Status
     verified = models.BooleanField(default=False, db_index=True)
     is_featured = models.BooleanField(default=False, db_index=True)
+    bookings_enabled = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Whether this restaurant accepts bookings."
+    )
     
     # Menu configuration
     MENU_TYPE_STRUCTURED = "structured"

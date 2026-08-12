@@ -191,7 +191,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
             "price_range", "occupancy", "verified", "is_featured", "opening_hours",
             "menu_type", "images", "active_deals_count", "is_saved", "is_favourite", "facilities",
             "loyalty_card_enabled", "loyalty_required_redemptions", "loyalty_reward_description",
-            "created_at"
+            "bookings_enabled", "created_at"
         )
         read_only_fields = ("slug", "verified", "is_featured", "created_at", "city", "categories", "cuisines", "images")
 
@@ -328,7 +328,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
             "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "categories",
-            "is_favourite", "active_deals", "cuisines", "loyalty_card_enabled"
+            "is_favourite", "active_deals", "cuisines", "loyalty_card_enabled", "bookings_enabled"
         )
 
         
@@ -944,7 +944,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
             "active_deals", "average_rating", "reviews_count", "is_open_now",
             "is_favourite", "has_user_reviewed", "distance", "distance_miles", "menu_type",
-            "loyalty_program", "created_at"
+            "loyalty_program", "bookings_enabled", "created_at"
         )
         
     def get_reviews(self, obj):
@@ -1054,7 +1054,7 @@ class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "description", "location", "price_range", "occupancy",
             "verified", "is_featured", "image", "rating", "average_rating", "review_count",
             "distance_km", "distance_miles", "cuisines", "deals", "is_favourite",
-            "loyalty_card_enabled"
+            "loyalty_card_enabled", "bookings_enabled"
         )
 
     def get_location(self, obj):
