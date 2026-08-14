@@ -6,6 +6,8 @@ from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 
+from users.web_views import DeleteAccountPageView
+
 schema_view = get_schema_view(
     openapi.Info(
         title="Discount Buddy API",
@@ -18,6 +20,9 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Public Google Play account-deletion page (not the in-app API)
+    path("delete-account/", DeleteAccountPageView.as_view(), name="delete-account"),
+    path("delete-account", DeleteAccountPageView.as_view()),
     # ===================== User-facing APIs =====================
     path("user/api/core/", include("core.urls")),
     path("user/api/users/", include("users.urls")),

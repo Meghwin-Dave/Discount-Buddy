@@ -17,6 +17,7 @@ import jwt
 import requests
 from jwt.algorithms import RSAAlgorithm
 
+from .account_deletion import delete_account_with_otp, send_account_deletion_otp
 from .models import UserProfile, RegistrationOTP, PasswordResetOTP
 from .serializers import (
     RegisterSerializer,
@@ -518,38 +519,7 @@ class DeleteAccountInitView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        user = request.user
-        email = user.email
-
-        # Invalidate previous pending OTPs for this email.
-        RegistrationOTP.objects.filter(email=email, is_verified=False).update(
-            is_verified=True, verified_at=timezone.now()
-        )
-
-        # Generate a 4-digit numeric OTP.
-        otp_code = f"{random.randint(0, 9999):04d}"
-        expires_at = timezone.now() + timedelta(minutes=10)
-
-        RegistrationOTP.objects.create(
-            email=email,
-            otp_code=otp_code,
-            expires_at=expires_at,
-        )
-
-        from_email = settings.DEFAULT_FROM_EMAIL
-        subject = "Account Deletion OTP - Discount Buddy"
-        message = f"Your verification code for account deletion is {otp_code}. It expires in 10 minutes. If you did not request this, please ignore this email."
-
-        # Send email asynchronously to improve response time
-        def send_otp_email():
-            try:
-                send_mail(subject, message, from_email, [email], fail_silently=False)
-            except Exception:
-                # Log the error if possible
-                pass
-
-        threading.Thread(target=send_otp_email).start()
-
+        send_account_deletion_otp(request.user.email)
         return Response(
             {"detail": "Verification code sent to your email."},
             status=status.HTTP_200_OK,
@@ -564,42 +534,20 @@ class DeleteAccountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def delete(self, request, *args, **kwargs):
-        user = request.user
         otp = request.data.get("otp")
-
         if not otp:
             return Response(
                 {"detail": "OTP is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        otp_obj = (
-            RegistrationOTP.objects.filter(
-                email=user.email, is_verified=False, otp_code=otp
-            )
-            .order_by("-created_at")
-            .first()
-        )
-
-        if not otp_obj:
+        success, error = delete_account_with_otp(request.user.email, otp)
+        if not success:
             return Response(
-                {"detail": "Invalid or expired verification code."},
+                {"detail": error},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if otp_obj.is_expired:
-            return Response(
-                {"detail": "Verification code has expired."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Mark OTP as verified
-        otp_obj.is_verified = True
-        otp_obj.verified_at = timezone.now()
-        otp_obj.save()
-
-        # Delete user
-        user.delete()
         return Response(
             {"detail": "Account deleted successfully."},
             status=status.HTTP_204_NO_CONTENT,

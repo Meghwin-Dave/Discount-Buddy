@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discount Buddy – Delete Account</title>
+  <style>
+    :root {
+      --bg: #f6f3ee;
+      --card: #ffffff;
+      --text: #1c1917;
+      --muted: #57534e;
+      --accent: #c2410c;
+      --accent-hover: #9a3412;
+      --border: #e7e5e4;
+      --error-bg: #fef2f2;
+      --error-text: #991b1b;
+      --info-bg: #fff7ed;
+      --info-text: #9a3412;
+      --success: #166534;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card);
+      border-radius: 16px;
+      padding: 32px 28px;
+      box-shadow: 0 10px 30px rgba(28, 25, 23, 0.08);
+    }
+    .brand {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 8px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 26px;
+      line-height: 1.2;
+    }
+    p {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 16px;
+      margin-bottom: 16px;
+    }
+    input:focus {
+      outline: 2px solid rgba(194, 65, 12, 0.35);
+      border-color: var(--accent);
+    }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 16px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--accent);
+      cursor: pointer;
+    }
+    button:hover { background: var(--accent-hover); }
+    .alert {
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      line-height: 1.45;
+    }
+    .alert-error {
+      background: var(--error-bg);
+      color: var(--error-text);
+    }
+    .alert-info {
+      background: var(--info-bg);
+      color: var(--info-text);
+    }
+    .success {
+      color: var(--success);
+      font-weight: 600;
+    }
+    .secondary {
+      display: block;
+      text-align: center;
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .note {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 18px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <p class="brand">Discount Buddy</p>
+    <h1>Delete Account</h1>
+
+    {% if step == "done" %}
+      <p class="success">Your Discount Buddy account and associated data have been deleted.</p>
+      <p>If you still have the app installed, you can uninstall it. You can create a new account later if you change your mind.</p>
+    {% elif step == "otp" %}
+      <p>Confirm deletion for <strong>{{ email }}</strong>.</p>
+      {% if info %}<div class="alert alert-info">{{ info }}</div>{% endif %}
+      {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+      <form method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="confirm">
+        <input type="hidden" name="email" value="{{ email }}">
+        <label for="otp">Verification code</label>
+        <input id="otp" name="otp" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="one-time-code" required>
+        <button type="submit">Confirm Account Deletion</button>
+      </form>
+      <a class="secondary" href="">Use a different email</a>
+      <p class="note">This permanently deletes your account, profile, wallet, bookings, reviews, saved items, and notifications. This cannot be undone.</p>
+    {% else %}
+      <p>Enter your registered email address to request deletion of your Discount Buddy account and associated data.</p>
+      {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+      <form method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="request">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="{{ email|default:'' }}" autocomplete="email" required>
+        <button type="submit">Request Account Deletion</button>
+      </form>
+      <p class="note">We will email a verification code before deleting anything. If you still have the app, you can also delete your account from in-app settings.</p>
+    {% endif %}
+  </main>
+</body>
+</html>
