@@ -1013,3 +1013,57 @@ class LoyaltyRedemptionRecord(TimeStampedModel):
 
     def __str__(self):
         return f"Loyalty record: {self.user.email} @ {self.restaurant.name} ({self.status})"
+
+
+class RestaurantViewLog(TimeStampedModel):
+    """Pinpoint tracking log of actual restaurant views and map visibility impressions"""
+    VIEW_TYPE_DETAIL = "detail"
+    VIEW_TYPE_MAP = "map"
+    VIEW_TYPE_LIST = "list"
+
+    VIEW_TYPE_CHOICES = [
+        (VIEW_TYPE_DETAIL, "Detail View"),
+        (VIEW_TYPE_MAP, "Map Visibility Impression"),
+        (VIEW_TYPE_LIST, "List View Impression"),
+    ]
+
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name="view_logs")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="restaurant_view_logs")
+    view_type = models.CharField(max_length=20, choices=VIEW_TYPE_CHOICES, default=VIEW_TYPE_DETAIL, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["restaurant", "view_type", "created_at"]),
+            models.Index(fields=["restaurant", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.restaurant.name} - {self.view_type} at {self.created_at}"
+
+
+class DealClickLog(TimeStampedModel):
+    """Pinpoint tracking log of actual deal views and clicks"""
+    ACTION_VIEW = "view"
+    ACTION_CLICK = "click"
+
+    ACTION_CHOICES = [
+        (ACTION_VIEW, "Deal View"),
+        (ACTION_CLICK, "Deal Click / Claim"),
+    ]
+
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="click_logs")
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name="deal_click_logs")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="deal_click_logs")
+    action_type = models.CharField(max_length=20, choices=ACTION_CHOICES, default=ACTION_CLICK, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["deal", "action_type", "created_at"]),
+            models.Index(fields=["restaurant", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.deal.title} - {self.action_type} at {self.created_at}"

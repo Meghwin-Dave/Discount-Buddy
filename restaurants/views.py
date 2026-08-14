@@ -40,6 +40,8 @@ from .models import (
     RestaurantPartnerRequest,
     UserRestaurantLoyalty,
     LoyaltyRedemptionRecord,
+    RestaurantViewLog,
+    DealClickLog,
 )
 from .serializers import (
     CountrySerializer,
@@ -383,6 +385,16 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         
+        # Log pinpoint detail view impression
+        try:
+            RestaurantViewLog.objects.create(
+                restaurant=instance,
+                user=request.user if request.user and request.user.is_authenticated else None,
+                view_type=RestaurantViewLog.VIEW_TYPE_DETAIL
+            )
+        except Exception:
+            pass
+
         # Calculate distance if coordinates provided
         params = request.query_params
         lat = params.get("latitude") or params.get("lat")
@@ -2260,18 +2272,50 @@ class MerchantAnalyticsView(APIView):
         deals_qs = Deal.objects.filter(restaurant__in=restaurants_owned)
         reviews_qs = Review.objects.filter(restaurant__in=restaurants_owned)
 
-        # ── 1. Core counts ───────────────────────────────────────────────────
-        total_clicks = deal_uses_qs.count()
+        # ── 1. Core counts (Pinpoint Actual Numbers) ───────────────────
+        # Pinpoint deal clicks: log entries or actual deal uses/claims
+        deal_clicks_log_count = DealClickLog.objects.filter(
+            restaurant__in=restaurants_owned,
+            created_at__gte=period_start,
+            action_type=DealClickLog.ACTION_CLICK,
+        ).count()
+        total_clicks = deal_clicks_log_count if deal_clicks_log_count > 0 else deal_uses_qs.count()
+
         total_bookings = bookings_qs.count()
         total_redemptions = redemptions_qs.count()
-        # Estimated views from actual engagement data only
-        total_views = total_clicks * 12 + total_bookings * 30
-        map_visibility = total_bookings * 18 + total_clicks * 5
 
-        # ── 2. Conversion funnel ─────────────────────────────────────────────
-        click_rate = round((total_clicks / total_views * 100), 1) if total_views else 0
-        booking_rate = round((total_bookings / total_clicks * 100), 1) if total_clicks else 0
-        redemption_rate = round((total_redemptions / total_bookings * 100), 1) if total_bookings else 0
+        # Pinpoint restaurant detail & list views + deal views
+        restaurant_views_count = RestaurantViewLog.objects.filter(
+            restaurant__in=restaurants_owned,
+            created_at__gte=period_start,
+            view_type__in=[RestaurantViewLog.VIEW_TYPE_DETAIL, RestaurantViewLog.VIEW_TYPE_LIST],
+        ).count()
+        deal_views_count = DealClickLog.objects.filter(
+            restaurant__in=restaurants_owned,
+            created_at__gte=period_start,
+            action_type=DealClickLog.ACTION_VIEW,
+        ).count()
+        logged_views = restaurant_views_count + deal_views_count
+        # Pinpoint views calculation: use logged views if present; fallback to sum of actual engagements
+        total_views = logged_views if logged_views > 0 else (total_clicks + total_bookings + reviews_qs.count())
+
+        # Pinpoint map visibility: exact count of map view impressions
+        map_views_count = RestaurantViewLog.objects.filter(
+            restaurant__in=restaurants_owned,
+            created_at__gte=period_start,
+            view_type=RestaurantViewLog.VIEW_TYPE_MAP,
+        ).count()
+        map_visibility = map_views_count
+
+        # ── 2. Conversion funnel (Pinpoint Rates) ─────────────────────
+        click_rate = round((total_clicks / total_views * 100), 1) if total_views > 0 else 0.0
+        booking_rate = round((total_bookings / total_clicks * 100), 1) if total_clicks > 0 else 0.0
+        if total_bookings > 0:
+            redemption_rate = round((total_redemptions / total_bookings * 100), 1)
+        elif total_clicks > 0:
+            redemption_rate = round((total_redemptions / total_clicks * 100), 1)
+        else:
+            redemption_rate = 0.0
 
         # ── 3. Revenue ───────────────────────────────────────────────────────
         revenue_agg = redemptions_qs.aggregate(
@@ -2329,19 +2373,27 @@ class MerchantAnalyticsView(APIView):
                 hourly[dt.hour] += 1
                 daily_heatmap[dt.weekday()] += 1
 
-        # ── 5. Deal performance ──────────────────────────────────────────────
+        # ── 5. Deal performance (Pinpoint Clicks & Conversion Rates) ─────────
         deal_perf = []
         for deal in deals_qs.select_related('restaurant'):
             d_uses = deal_uses_qs.filter(deal=deal)
             d_redemptions = d_uses.filter(is_redeemed=True)
-            d_clicks = d_uses.count()
             d_redeems = d_redemptions.count()
+
+            d_click_logs = DealClickLog.objects.filter(
+                deal=deal,
+                created_at__gte=period_start,
+                action_type=DealClickLog.ACTION_CLICK,
+            ).count()
+            d_clicks = d_click_logs if d_click_logs > 0 else d_uses.count()
+
             d_bookings = bookings_qs.filter(restaurant=deal.restaurant).count()
             d_rev_agg = d_redemptions.aggregate(
                 total=Sum('final_bill_amount'), fallback=Sum('price')
             )
             d_revenue = float(d_rev_agg['total'] or d_rev_agg['fallback'] or 0)
-            d_conv = round(d_redeems / d_clicks * 100, 1) if d_clicks else 0
+            d_conv = round((d_redeems / d_clicks * 100), 1) if d_clicks > 0 else 0.0
+
             deal_perf.append({
                 'deal_id': deal.id,
                 'title': deal.title,

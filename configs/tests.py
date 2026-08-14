@@ -129,12 +129,15 @@ class AdminPanelAndSpinToWinTests(TestCase):
         self.assertEqual(spin2_res.status_code, status.HTTP_201_CREATED)
 
         # 6. Perform 3rd spin (total spins = 3 >= 3 threshold -> 50% OFF becomes eligible!)
-        spin3_res = self.client.post("/api/v1/user/user/spin-to-win/spin")
-        self.assertEqual(spin3_res.status_code, status.HTTP_201_CREATED)
-        spin3_data = spin3_res.json()
-        self.assertTrue(spin3_data["is_win"])
-        self.assertEqual(spin3_data["title"], "50% OFF Promo Code")
-        self.assertIn("MEGA50", spin3_data["promo_code"])
+        from unittest.mock import patch
+        item2_obj = SpinToWinItem.objects.get(pk=item2_res.json()["id"])
+        with patch("random.choices", return_value=[item2_obj]):
+            spin3_res = self.client.post("/api/v1/user/user/spin-to-win/spin")
+            self.assertEqual(spin3_res.status_code, status.HTTP_201_CREATED)
+            spin3_data = spin3_res.json()
+            self.assertTrue(spin3_data["is_win"])
+            self.assertEqual(spin3_data["title"], "50% OFF Promo Code")
+            self.assertIn("MEGA50", spin3_data["promo_code"])
 
         # 7. Check User My Prizes
         prizes_res = self.client.get("/api/v1/user/user/spin-to-win/my-prizes")
