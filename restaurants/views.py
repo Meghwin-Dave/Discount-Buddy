@@ -187,9 +187,38 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = RestaurantFilter
     search_fields = ["name", "description", "address", "city__name", "cuisines__name"]
-    ordering_fields = ["name", "created_at", "is_featured"]
-    ordering = ["-is_featured", "-created_at"]
+    ordering_fields = [
+        "name", "created_at", "is_featured",
+        "active_deals_count", "claims_count", "average_rating", "rating"
+    ]
+    ordering = ["-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at"]
     lookup_field = "slug"
+
+    def filter_queryset(self, queryset):
+        queryset = super().filter_queryset(queryset)
+        
+        ordering_param = self.request.query_params.get("ordering", "").lower()
+        sort_param = self.request.query_params.get("sort", "").lower()
+        param = ordering_param or sort_param
+
+        # If user explicitly requested distance/nearest sorting, list() handles distance sorting in Python.
+        if "distance" in param or "nearest" in param:
+            return queryset
+
+        # Standard filter sorting:
+        # 1. Most deals restaurant first (-active_deals_count)
+        # 2. If same number of deals, check number of visitors scanned QR or claimed deal (-claims_count)
+        # 3. After that, based on rating (-average_rating)
+        if param in ["most_deals", "deals", "-deals", "-active_deals_count", "active_deals_count"]:
+            return queryset.order_by("-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at")
+        elif param in ["claims", "scanned", "qr", "scanned_qr", "visitors", "-claims_count", "claims_count"]:
+            return queryset.order_by("-claims_count", "-active_deals_count", "-average_rating", "-is_featured", "-created_at")
+        elif param in ["rating", "average_rating", "-average_rating", "-rating"]:
+            return queryset.order_by("-average_rating", "-active_deals_count", "-claims_count", "-is_featured", "-created_at")
+        elif not param:
+            return queryset.order_by("-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at")
+
+        return queryset
 
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
@@ -244,6 +273,10 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                     deals__start_date__lte=timezone.now(),
                     deals__end_date__gte=timezone.now()
                 ),
+                distinct=True
+            ),
+            claims_count=Count(
+                "deal_uses",
                 distinct=True
             )
         )
@@ -479,10 +512,14 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                     deals__end_date__gte=timezone.now()
                 ),
                 distinct=True
+            ),
+            claims_count=Count(
+                "deal_uses",
+                distinct=True
             )
         )
         
-        # Calculate actual distances and sort
+        # Calculate actual distances and sort (primary: distance, secondary: active_deals_count, claims_count, average_rating)
         restaurants_with_distance = []
         for restaurant in restaurants:
             if restaurant.latitude and restaurant.longitude:
@@ -497,8 +534,13 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                         restaurant._distance_miles = distance_miles
                         restaurants_with_distance.append((restaurant, distance_miles))
         
-        # Sort by distance
-        restaurants_with_distance.sort(key=lambda x: x[1])
+        # Sort by distance, then active deals, claims/scans, and rating
+        restaurants_with_distance.sort(key=lambda x: (
+            x[1],
+            -getattr(x[0], 'active_deals_count', 0),
+            -getattr(x[0], 'claims_count', 0),
+            -getattr(x[0], 'average_rating', 0.0)
+        ))
         restaurants = [r[0] for r in restaurants_with_distance]
         
         serializer = RestaurantListSerializer(restaurants, many=True, context={"request": request})
@@ -950,7 +992,7 @@ class HomeScreenView(generics.GenericAPIView):
         ).select_related("city", "city__country").prefetch_related(
             "categories", "cuisines", "images", "facilities"
         ).annotate(
-            average_rating=Avg("reviews__rating"),
+            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
             reviews_count=Count("reviews", distinct=True),
             active_deals_count=Count(
                 "deals",
@@ -959,6 +1001,10 @@ class HomeScreenView(generics.GenericAPIView):
                     deals__start_date__lte=timezone.now(),
                     deals__end_date__gte=timezone.now()
                 ),
+                distinct=True
+            ),
+            claims_count=Count(
+                "deal_uses",
                 distinct=True
             )
         )
@@ -1101,8 +1147,8 @@ class HomeScreenView(generics.GenericAPIView):
             favourites = [sr.restaurant for sr in saved_restaurants]
             favourites = populate_distances(favourites)
 
-        # All restaurants (card format) – keep default ordering but limit return
-        all_restaurants = list(queryset.order_by("-is_featured", "-average_rating")[:50])
+        # All restaurants (card format) – sorted by most deals first, then visitors scanned QR/claimed deal, then rating
+        all_restaurants = list(queryset.order_by("-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at")[:50])
         all_restaurants = populate_distances(all_restaurants)
 
         # Aggregate everything for normalization

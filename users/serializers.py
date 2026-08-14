@@ -95,6 +95,12 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         if user.is_merchant:
             token['role'] = UserProfile.ROLE_MERCHANT
+
+        if user.is_superuser or user.is_staff or token.get('role') == UserProfile.ROLE_ADMIN:
+            token['role'] = UserProfile.ROLE_ADMIN
+            token['is_admin'] = True
+            token['is_superuser'] = user.is_superuser
+            token['is_staff'] = user.is_staff
         
         # Add is_merchant and is_customer flags to token payload
         token['is_merchant'] = user.is_merchant
@@ -117,6 +123,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         if self.user.is_merchant:
             data['role'] = UserProfile.ROLE_MERCHANT
         
+        is_admin = self.user.is_superuser or self.user.is_staff or data.get('role') == UserProfile.ROLE_ADMIN
+        data['is_admin'] = is_admin
+        data['is_superuser'] = self.user.is_superuser
+        data['is_staff'] = self.user.is_staff
+        if is_admin:
+            data['role'] = UserProfile.ROLE_ADMIN
+
         # Add current date
         data['current_date'] = timezone.now().isoformat()
         

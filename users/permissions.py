@@ -9,8 +9,27 @@ class IsAdmin(BasePermission):
         return bool(
             request.user
             and request.user.is_authenticated
-            and getattr(request.user, "profile", None)
-            and request.user.profile.role == UserProfile.ROLE_ADMIN
+            and (
+                request.user.is_superuser
+                or request.user.is_staff
+                or (getattr(request.user, "profile", None) and request.user.profile.role == UserProfile.ROLE_ADMIN)
+            )
+        )
+
+
+class IsSuperUserOrAdmin(BasePermission):
+    """
+    Permission class to allow access to superusers, staff users, or users with admin role.
+    """
+    def has_permission(self, request, view):
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and (
+                request.user.is_superuser
+                or request.user.is_staff
+                or (getattr(request.user, "profile", None) and request.user.profile.role == UserProfile.ROLE_ADMIN)
+            )
         )
 
 

@@ -23,6 +23,12 @@ urlpatterns = [
     # Public Google Play account-deletion page (not the in-app API)
     path("delete-account/", DeleteAccountPageView.as_view(), name="delete-account"),
     path("delete-account", DeleteAccountPageView.as_view()),
+    # ===================== Admin / App APIs =====================
+    path("admin/api/", include("configs.urls")),
+    path("api/v1/admin/", include("configs.urls")),
+    path("api/v1/user/", include("configs.urls")),
+    path("user/api/configs/", include("configs.urls")),
+
     # ===================== User-facing APIs =====================
     path("user/api/core/", include("core.urls")),
     path("user/api/users/", include("users.urls")),
@@ -41,6 +47,7 @@ urlpatterns = [
     path("merchant/api/restaurants/", include("restaurants.merchant_urls")),
     path("merchant/api/notifications/", include("notifications.urls")),
     path("merchant/api/notifications", include("notifications.urls")),
+    path("merchant/api/configs/", include("configs.urls")),
     # path("api/orders/", include("orders.urls")),
     # path("api/marketplace/", include("marketplace.urls")),
     path(

@@ -312,6 +312,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
     active_deals_count = serializers.IntegerField(read_only=True)
+    claims_count = serializers.IntegerField(read_only=True, required=False, default=0)
     leaderboard_score = serializers.SerializerMethodField()
     distance_miles = serializers.SerializerMethodField()
     is_favourite = serializers.SerializerMethodField()
@@ -327,7 +328,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "description", "city_name", "country_name",
             "latitude", "longitude", "price_range", "occupancy", "verified",
             "is_featured", "primary_image", "average_rating", "review_count",
-            "active_deals_count", "leaderboard_score", "distance_miles", "facilities", "categories",
+            "active_deals_count", "claims_count", "leaderboard_score", "distance_miles", "facilities", "categories",
             "is_favourite", "active_deals", "cuisines", "loyalty_card_enabled", "bookings_enabled"
         )
 
@@ -934,6 +935,8 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
     distance = serializers.SerializerMethodField()
     distance_miles = serializers.SerializerMethodField()
     loyalty_program = serializers.SerializerMethodField()
+    active_deals_count = serializers.IntegerField(read_only=True, required=False, default=0)
+    claims_count = serializers.IntegerField(read_only=True, required=False, default=0)
     
     class Meta:
         model = Restaurant
@@ -942,7 +945,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "latitude", "longitude", "phone", "email", "website",
             "categories", "cuisines", "facilities", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
-            "active_deals", "average_rating", "reviews_count", "is_open_now",
+            "active_deals", "active_deals_count", "claims_count", "average_rating", "reviews_count", "is_open_now",
             "is_favourite", "has_user_reviewed", "distance", "distance_miles", "menu_type",
             "loyalty_program", "bookings_enabled", "created_at"
         )
