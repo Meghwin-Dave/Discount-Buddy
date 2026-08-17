@@ -2,7 +2,8 @@ import math
 from django.core.mail import send_mail
 from django.conf import settings
 from django.db import models
-from django.db.models import Q, Count, F, Avg, Sum
+from django.db.models import Q, Count, F, Avg, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.core.cache import cache
 from rest_framework import generics, viewsets, status, filters
@@ -262,9 +263,6 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 "categories", "images", "facilities", "cuisines"
             )
         
-        from django.db.models.functions import Coalesce
-        from django.db.models import Value
-        
         queryset = queryset.annotate(
             average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
             reviews_count=Count("reviews", distinct=True),
@@ -498,9 +496,6 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         # Get all restaurants within bounding box (km)
         lat_delta = radius_km / 111.0
         lon_delta = radius_km / (111.0 * abs(math.cos(math.radians(lat))))
-        
-        from django.db.models.functions import Coalesce
-        from django.db.models import Value
 
         restaurants = Restaurant.objects.filter(
             is_active=True,
