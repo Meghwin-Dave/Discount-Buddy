@@ -53,41 +53,6 @@ class AppPlatforms:
     IOS = "ios"
 
 
-class AppBanner(TimeStampedModel, SoftDeleteModel):
-    """App promotional banner configuration"""
-    TARGET_RESTAURANT = "restaurant"
-    TARGET_DEAL = "deal"
-    TARGET_SPIN_TO_WIN = "spin_to_win"
-    TARGET_EXTERNAL_URL = "external_url"
-    TARGET_NONE = "none"
-
-    TARGET_CHOICES = [
-        (TARGET_RESTAURANT, "Restaurant"),
-        (TARGET_DEAL, "Deal"),
-        (TARGET_SPIN_TO_WIN, "Spin to Win"),
-        (TARGET_EXTERNAL_URL, "External URL"),
-        (TARGET_NONE, "None"),
-    ]
-
-    title = models.CharField(max_length=255)
-    subtitle = models.CharField(max_length=255, blank=True)
-    image = models.ImageField(upload_to="banners/%Y/%m/%d/", null=True, blank=True)
-    image_url = models.URLField(blank=True, help_text="External image URL fallback")
-    target_type = models.CharField(max_length=50, choices=TARGET_CHOICES, default=TARGET_NONE)
-    target_value = models.CharField(max_length=255, blank=True, help_text="Slug, ID, or external link")
-    display_order = models.PositiveIntegerField(default=0)
-    is_active = models.BooleanField(default=True, db_index=True)
-    start_date = models.DateTimeField(null=True, blank=True)
-    end_date = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        db_table = "app_banners"
-        ordering = ["display_order", "-created_at"]
-
-    def __str__(self):
-        return self.title
-
-
 class SpinToWinCampaign(TimeStampedModel):
     """Spin to Win Campaign Configuration"""
     title = models.CharField(max_length=255, default="Spin & Win Rewards")

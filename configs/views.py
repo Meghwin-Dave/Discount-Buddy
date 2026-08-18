@@ -9,10 +9,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from users.permissions import IsSuperUserOrAdmin
 
-from .models import AppConfig, AppBanner, SpinToWinCampaign, SpinToWinItem, UserSpinResult
+from .models import AppConfig, SpinToWinCampaign, SpinToWinItem, UserSpinResult
 from .serializers import (
     AppConfigSerializer, VersionCheckRequestSerializer, VersionCheckResponseSerializer,
-    AppBannerSerializer, SpinToWinCampaignSerializer, SpinToWinItemSerializer, UserSpinResultSerializer
+    SpinToWinCampaignSerializer, SpinToWinItemSerializer, UserSpinResultSerializer
 )
 from .services import AppConfigService
 
@@ -48,24 +48,6 @@ class AppConfigViewSet(viewsets.ModelViewSet):
 # Admin API ViewSets (Mobile Admin Panel)
 # ============================================================================
 
-class AdminAppBannerViewSet(viewsets.ModelViewSet):
-    """Admin ViewSet to manage App Banners"""
-    queryset = AppBanner.objects.all()
-    serializer_class = AppBannerSerializer
-    permission_classes = [IsSuperUserOrAdmin]
-
-    @action(detail=True, methods=["post"], url_path="toggle-active")
-    def toggle_active(self, request, pk=None):
-        banner = self.get_object()
-        banner.is_active = not banner.is_active
-        banner.save(update_fields=["is_active", "updated_at"])
-        return Response({
-            "status": "success",
-            "id": banner.id,
-            "is_active": banner.is_active
-        })
-
-
 class AdminSpinToWinCampaignViewSet(viewsets.ModelViewSet):
     """Admin ViewSet to manage Spin to Win Campaign settings"""
     queryset = SpinToWinCampaign.objects.all()
@@ -90,23 +72,6 @@ class AdminSpinHistoryListView(generics.ListAPIView):
 # ============================================================================
 # User / Public Mobile API Views
 # ============================================================================
-
-from django.db.models import Q
-
-
-class UserAppBannerListView(generics.ListAPIView):
-    """User facing view to get active promotional app banners"""
-    serializer_class = AppBannerSerializer
-    permission_classes = [AllowAny]
-
-    def get_queryset(self):
-        now = timezone.now()
-        qs = AppBanner.objects.filter(is_active=True)
-        # Filter by start and end date if set
-        qs = qs.filter(Q(start_date__isnull=True) | Q(start_date__lte=now))
-        qs = qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=now))
-        return qs.order_by("display_order", "-created_at")
-
 
 class UserSpinToWinWheelView(generics.GenericAPIView):
     """Get active wheel configuration, visible items, and user's remaining spins for today"""

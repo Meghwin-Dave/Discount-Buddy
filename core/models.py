@@ -24,6 +24,12 @@ class Banner(ProcessedImageMixin, TimeStampedModel, SoftDeleteModel):
     image = models.ImageField(upload_to='banners/', null=True, blank=True)
     title = models.CharField(max_length=255, null=True, blank=True)
     body = models.TextField(null=True, blank=True)
+    cta_url = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Tap target: in-app route (e.g. /restaurants/slug) or https URL.",
+    )
 
     class Meta:
         ordering = ['-priority', '-created_at']

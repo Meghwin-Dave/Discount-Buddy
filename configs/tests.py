@@ -1,9 +1,9 @@
 from django.test import TestCase
-from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status
 from users.models import User, UserProfile
-from configs.models import AppBanner, SpinToWinCampaign, SpinToWinItem, UserSpinResult
+from configs.models import SpinToWinCampaign, SpinToWinItem
+from core.models import Banner
 
 
 class AdminPanelAndSpinToWinTests(TestCase):
@@ -38,36 +38,43 @@ class AdminPanelAndSpinToWinTests(TestCase):
         self.assertEqual(data.get("role"), "admin")
 
     def test_admin_banner_crud_and_user_banner_list(self):
-        # Admin authentication
         self.client.force_authenticate(user=self.admin_user)
 
-        # 1. Create banner
         create_res = self.client.post("/api/v1/admin/admin/banners", {
             "title": "Summer Discount Promo",
-            "subtitle": "Get up to 50% off",
-            "target_type": "spin_to_win",
-            "display_order": 1,
-            "is_active": True
+            "body": "Get up to 50% off",
+            "cta_url": "https://example.com/deals",
+            "priority": 1,
+            "is_visible": True,
         })
         self.assertEqual(create_res.status_code, status.HTTP_201_CREATED)
         banner_id = create_res.json()["id"]
+        self.assertEqual(create_res.json().get("cta_url"), "https://example.com/deals")
+        self.assertTrue(Banner.objects.filter(pk=banner_id).exists())
 
-        # 2. Toggle active status
-        toggle_res = self.client.post(f"/api/v1/admin/admin/banners/{banner_id}/toggle-active")
+        toggle_res = self.client.post(f"/api/v1/admin/admin/banners/{banner_id}/toggle-visible")
         self.assertEqual(toggle_res.status_code, status.HTTP_200_OK)
-        self.assertFalse(toggle_res.json()["is_active"])
+        self.assertFalse(toggle_res.json()["is_visible"])
 
-        # Re-activate banner
-        self.client.post(f"/api/v1/admin/admin/banners/{banner_id}/toggle-active")
+        self.client.post(f"/api/v1/admin/admin/banners/{banner_id}/toggle-visible")
 
-        # 3. User lists active banners
         self.client.force_authenticate(user=None)
-        user_banners_res = self.client.get("/api/v1/user/user/banners")
+        user_banners_res = self.client.get("/user/api/core/banners")
         self.assertEqual(user_banners_res.status_code, status.HTTP_200_OK)
         banners_data = user_banners_res.json()
         banners_list = banners_data.get("results", banners_data)
         self.assertEqual(len(banners_list), 1)
         self.assertEqual(banners_list[0]["title"], "Summer Discount Promo")
+        self.assertEqual(banners_list[0]["cta_url"], "https://example.com/deals")
+
+        # Duplicate AppBanner endpoint must be gone
+        old_user_banners = self.client.get("/api/v1/user/user/banners")
+        self.assertEqual(old_user_banners.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Customers cannot write banners
+        self.client.force_authenticate(user=self.customer_user)
+        forbidden = self.client.post("/api/v1/admin/admin/banners", {"title": "Nope"})
+        self.assertEqual(forbidden.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_spin_to_win_campaign_items_and_spin_mechanics(self):
         self.client.force_authenticate(user=self.admin_user)

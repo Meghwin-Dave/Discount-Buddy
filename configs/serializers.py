@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import AppConfig, AppBanner, SpinToWinCampaign, SpinToWinItem, UserSpinResult
+from .models import AppConfig, SpinToWinCampaign, SpinToWinItem, UserSpinResult
 
 class AppConfigSerializer(serializers.ModelSerializer):
     class Meta:
@@ -25,17 +25,6 @@ class VersionCheckResponseSerializer(serializers.Serializer):
     latest_version = serializers.CharField(allow_null=True)
     minimum_version = serializers.CharField(allow_null=True)
     store_url = serializers.CharField(allow_null=True)
-
-
-class AppBannerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AppBanner
-        fields = [
-            "id", "title", "subtitle", "image", "image_url",
-            "target_type", "target_value", "display_order", "is_active",
-            "start_date", "end_date", "created_at", "updated_at"
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class SpinToWinItemSerializer(serializers.ModelSerializer):
