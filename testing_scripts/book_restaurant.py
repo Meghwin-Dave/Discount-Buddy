@@ -6,15 +6,16 @@ Run: python testing_scripts/book_restaurant.py
 """
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import requests
 
-BASE_URL = "http://16.171.196.144/user/api"
+BASE_URL = "http://127.0.0.1:8000/user/api"
 
 EMAIL = "user4@test.com"
 PASSWORD = "test123"
-RESTAURANT_ID = 11
+RESTAURANT_ID = 8
 
 
 def main():
@@ -32,9 +33,14 @@ def main():
     headers = {"Authorization": f"Bearer {access_token}"}
     print(f"Logged in as {EMAIL}")
 
-    booking_date = (datetime.now(timezone.utc) + timedelta(days=7)).replace(
-        hour=19, minute=30, second=0, microsecond=0
-    ).isoformat().replace("+00:00", "Z")
+    london = ZoneInfo("Europe/London")
+    booking_local = (datetime.now(london) + timedelta(days=7)).replace(
+        hour=17, minute=0, second=0, microsecond=0
+    )
+    booking_date = booking_local.astimezone(ZoneInfo("UTC")).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    print(f"Booking local (London): {booking_local.strftime('%Y-%m-%d %H:%M %Z')}")
 
     booking_payload = {
         "restaurant": RESTAURANT_ID,

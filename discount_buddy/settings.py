@@ -123,7 +123,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+# Datetimes are stored in UTC; this only controls how they are rendered to users
+# (notification copy, admin, templates) and how naive input is interpreted.
+TIME_ZONE = "Europe/London"
 
 USE_I18N = True
 

@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 from django.db import transaction
 from django.utils import timezone
 
+from core.utils.datetime_format import format_datetime_label, to_iso_local, to_iso_utc
 from .models import Notification, DeviceToken
 from users.models import User
 
@@ -82,13 +83,13 @@ class NotificationService:
         title = "Booking Confirmed 🎉"
         message = (
             f"Your table at {booking.restaurant.name} has been confirmed "
-            f"for {booking.booking_date.strftime('%B %d, %Y at %I:%M %p')}."
+            f"for {format_datetime_label(booking.booking_date)}."
         )
         
         payload = {
             "booking_id": str(booking.id),
             "restaurant_id": str(booking.restaurant.id),
-            "booking_date": booking.booking_date.isoformat(),
+            "booking_date": to_iso_local(booking.booking_date),
         }
         
         return NotificationService.create_notification(
@@ -296,31 +297,20 @@ class NotificationService:
         if not owners:
             return 0
 
-        # Ensure booking_date is formatted safely
-        try:
-            if isinstance(booking.booking_date, str):
-                from django.utils.dateparse import parse_datetime
-                dt_obj = parse_datetime(booking.booking_date)
-                booking_date_str = dt_obj.strftime('%B %d, %Y at %I:%M %p') if dt_obj else booking.booking_date
-            else:
-                booking_date_str = booking.booking_date.strftime('%B %d, %Y at %I:%M %p')
-        except Exception:
-            booking_date_str = str(booking.booking_date)
-
         title = "New Table Booking Request 📅"
         message = (
             f"{booking.contact_name or booking.user.get_full_name() or booking.user.email} "
             f"has requested a table for {booking.number_of_guests} guest(s) "
             f"at {restaurant.name} on "
-            f"{booking_date_str}."
+            f"{format_datetime_label(booking.booking_date)}."
         )
 
         payload = {
             "booking_id": str(booking.id),
             "restaurant_id": str(restaurant.id),
             "customer_name": booking.contact_name or booking.user.get_full_name() or booking.user.email,
-            "number_of_guests": booking.number_of_guests,
-            "booking_date": booking_date_str,
+            "number_of_guests": str(booking.number_of_guests),
+            "booking_date": to_iso_local(booking.booking_date),
         }
 
         count = 0
@@ -355,31 +345,20 @@ class NotificationService:
         if not owners:
             return 0
 
-        # Ensure booking_date is formatted safely
-        try:
-            if isinstance(booking.booking_date, str):
-                from django.utils.dateparse import parse_datetime
-                dt_obj = parse_datetime(booking.booking_date)
-                booking_date_str = dt_obj.strftime('%B %d, %Y at %I:%M %p') if dt_obj else booking.booking_date
-            else:
-                booking_date_str = booking.booking_date.strftime('%B %d, %Y at %I:%M %p')
-        except Exception:
-            booking_date_str = str(booking.booking_date)
-
         customer_name = booking.contact_name or (booking.user.get_full_name() if booking.user else None) or (booking.user.email if booking.user else "A customer")
         
         title = "Table Booking Cancelled ❌"
         message = (
             f"{customer_name} has cancelled their booking for {booking.number_of_guests} guest(s) "
-            f"at {restaurant.name} on {booking_date_str}."
+            f"at {restaurant.name} on {format_datetime_label(booking.booking_date)}."
         )
 
         payload = {
             "booking_id": str(booking.id),
             "restaurant_id": str(restaurant.id),
             "customer_name": customer_name,
-            "number_of_guests": booking.number_of_guests,
-            "booking_date": booking_date_str,
+            "number_of_guests": str(booking.number_of_guests),
+            "booking_date": to_iso_local(booking.booking_date),
             "status": "CANCELLED",
         }
 
@@ -434,7 +413,7 @@ class NotificationService:
             "restaurant_id": str(restaurant.id),
             "customer_name": customer_name,
             "number_of_guests": str(booking.number_of_guests),
-            "booking_date": booking.booking_date.isoformat(),
+            "booking_date": to_iso_local(booking.booking_date),
         }
 
         count = 0

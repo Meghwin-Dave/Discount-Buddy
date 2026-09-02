@@ -997,7 +997,7 @@ class HomeScreenView(generics.GenericAPIView):
             is_active=True,
             verified=True
         ).select_related("city", "city__country").prefetch_related(
-            "categories", "cuisines", "images", "facilities"
+            "categories", "cuisines", "images", "facilities", "opening_slots"
         ).annotate(
             average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
             reviews_count=Count("reviews", distinct=True),
@@ -1109,27 +1109,19 @@ class HomeScreenView(generics.GenericAPIView):
                     r._distance_miles = km_to_miles(dist_km)
             return res_list
         
-        # Now Open filter
-        now_open_restaurants = None
+        # Materialised once and reused, since both the "now open" and "top 10"
+        # sections need every candidate in memory anyway.
+        restaurants_for_top = list(queryset)
+
+        # Now Open — evaluated in Python so split shifts and overnight windows
+        # (e.g. 22:00-02:00) are honoured, which a plain time BETWEEN cannot do.
+        now_open_restaurants = []
         if now_open:
-            # Filter restaurants that are currently open
-            from datetime import datetime
-            now = datetime.now()
-            current_day = now.weekday()
-            current_time = now.time()
-            
-            open_restaurant_ids = OpeningSlot.objects.filter(
-                day_of_week=current_day,
-                is_closed=False,
-                opening_time__lte=current_time,
-                closing_time__gte=current_time
-            ).values_list("restaurant_id", flat=True)
-            
-            now_open_restaurants = list(queryset.filter(id__in=open_restaurant_ids))
-            now_open_restaurants = populate_distances(now_open_restaurants)
+            now_open_restaurants = populate_distances(
+                [r for r in restaurants_for_top if r.is_open_now()]
+            )
         
         # Top 10 in City (by leaderboard score: user rating + mystery score with decay)
-        restaurants_for_top = list(queryset)
         for r in restaurants_for_top:
             r._leaderboard_score = r.get_leaderboard_score()
         top_10 = sorted(
@@ -1161,6 +1153,7 @@ class HomeScreenView(generics.GenericAPIView):
         # Aggregate everything for normalization
         all_encountered_restaurants = set()
         for r in nearby_restaurants: all_encountered_restaurants.add(r)
+        for r in now_open_restaurants: all_encountered_restaurants.add(r)
         for r in top_10: all_encountered_restaurants.add(r)
         for r in featured: all_encountered_restaurants.add(r)
         for r in favourites: all_encountered_restaurants.add(r)
@@ -1209,6 +1202,7 @@ class HomeScreenView(generics.GenericAPIView):
             "cuisines": cuisines_dict,
             "sections": {
                 "nearby": [r.id for r in nearby_restaurants],
+                "now_open": [r.id for r in now_open_restaurants],
                 "top_10": [r.id for r in top_10],
                 "featured": [r.id for r in featured],
                 "favourites": [r.id for r in favourites]

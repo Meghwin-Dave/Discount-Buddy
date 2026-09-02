@@ -30,33 +30,32 @@ class RestaurantFilter(filters.FilterSet):
             return queryset
         
         from .models import OpeningSlot
-        from django.db.models import Q
+        from django.db.models import F, Q
         
-        day_names = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        final_q = Q()
-        
-        # 1. Filter using OpeningSlot model
         slot_filters = Q(is_closed=False)
-        day_val_int = None
         if day_val is not None:
             try:
-                day_val_int = int(day_val)
-                slot_filters &= Q(day_of_week=day_val_int)
+                slot_filters &= Q(day_of_week=int(day_val))
             except ValueError:
                 pass
+
         if time_val is not None:
-            slot_filters &= Q(opening_time__lte=time_val, closing_time__gte=time_val)
-            
-        open_restaurant_ids = OpeningSlot.objects.filter(slot_filters).values_list("restaurant_id", flat=True)
-        final_q |= Q(id__in=open_restaurant_ids)
-        
-        # 2. Filter using opening_hours JSON field
-        if day_val_int is not None and 0 <= day_val_int <= 6:
-            day_name = day_names[day_val_int]
-            # Check if the JSON field has the day_name key (not null)
-            final_q |= Q(**{f"opening_hours__{day_name}__isnull": False})
-            
-        return queryset.filter(final_q).distinct()
+            # A slot covers the requested time in one of three ways: a normal
+            # window containing it, an overnight window it falls either side of,
+            # or an all-day window (identical open and close times).
+            within_normal = Q(closing_time__gt=F("opening_time")) & Q(
+                opening_time__lte=time_val, closing_time__gt=time_val
+            )
+            within_overnight = Q(closing_time__lt=F("opening_time")) & (
+                Q(opening_time__lte=time_val) | Q(closing_time__gt=time_val)
+            )
+            open_all_day = Q(closing_time=F("opening_time"))
+            slot_filters &= within_normal | within_overnight | open_all_day
+
+        open_restaurant_ids = OpeningSlot.objects.filter(slot_filters).values_list(
+            "restaurant_id", flat=True
+        )
+        return queryset.filter(id__in=open_restaurant_ids).distinct()
 
     def filter_has_deals(self, queryset, name, value):
         """Filter restaurants that have active deals"""

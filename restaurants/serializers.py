@@ -3,6 +3,7 @@ from django.utils import timezone
 
 from core.serializers_image import ProcessedImageOutputMixin
 from core.services.image_service import ImageProcessingService
+from .opening_hours import windows_overlap as _windows_overlap
 from .opening_hours_sync import sync_opening_slots_from_opening_hours
 from .models import (
     Country,
@@ -902,17 +903,65 @@ class MenuCategorySerializer(serializers.ModelSerializer):
 
 class OpeningSlotSerializer(serializers.ModelSerializer):
     day_name = serializers.CharField(source="get_day_of_week_display", read_only=True)
+    display_range = serializers.CharField(read_only=True)
+    spans_midnight = serializers.BooleanField(read_only=True)
+    is_open_all_day = serializers.BooleanField(read_only=True)
     
     class Meta:
         model = OpeningSlot
-        fields = ("id", "day_of_week", "day_name", "opening_time", "closing_time", "is_closed")
-        
+        fields = (
+            "id", "day_of_week", "day_name", "opening_time", "closing_time", "is_closed",
+            "display_range", "spans_midnight", "is_open_all_day",
+        )
+
+    def _resolve_restaurant(self, data):
+        """
+        Find the restaurant this slot belongs to.
+
+        ``restaurant`` is not a declared field — the viewset injects it on save —
+        so on create it has to be read back off the raw request data.
+        """
+        restaurant = data.get("restaurant") or getattr(self.instance, "restaurant", None)
+        if restaurant is not None:
+            return restaurant
+
+        raw = (self.initial_data or {}).get("restaurant") if hasattr(self, "initial_data") else None
+        if raw in (None, ""):
+            return None
+        return Restaurant.objects.filter(pk=raw).first()
+
     def validate(self, data):
-        if not data.get('is_closed', False):
-            opening = data.get('opening_time')
-            closing = data.get('closing_time')
-            if opening and closing and opening >= closing:
-                raise serializers.ValidationError("Closing time must be after opening time.")
+        """
+        Reject only windows that cannot be interpreted.
+
+        A closing time before the opening time is a legitimate overnight window
+        (22:00-02:00), and equal times mean open all day, so neither is an error.
+        What is rejected is a window overlapping another slot on the same day,
+        since that would double-count availability.
+        """
+        if data.get("is_closed", getattr(self.instance, "is_closed", False)):
+            return data
+
+        opening = data.get("opening_time") or getattr(self.instance, "opening_time", None)
+        closing = data.get("closing_time") or getattr(self.instance, "closing_time", None)
+        day_of_week = data.get("day_of_week", getattr(self.instance, "day_of_week", None))
+        restaurant = self._resolve_restaurant(data)
+
+        if opening is None or closing is None or restaurant is None or day_of_week is None:
+            return data
+
+        siblings = OpeningSlot.objects.filter(
+            restaurant=restaurant, day_of_week=day_of_week, is_closed=False
+        )
+        if self.instance is not None:
+            siblings = siblings.exclude(pk=self.instance.pk)
+
+        for sibling in siblings:
+            if _windows_overlap(opening, closing, sibling.opening_time, sibling.closing_time):
+                raise serializers.ValidationError(
+                    f"This window overlaps an existing slot ({sibling.display_range}) on the same day."
+                )
+
         return data
 
 
@@ -925,6 +974,8 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
     reviews = serializers.SerializerMethodField()
     menu_categories = serializers.SerializerMethodField()
     opening_slots = OpeningSlotSerializer(many=True, read_only=True)
+    opening_status = serializers.SerializerMethodField()
+    opening_hours_display = serializers.SerializerMethodField()
     facilities = FacilitySerializer(many=True, read_only=True)
     active_deals = serializers.SerializerMethodField()
     average_rating = serializers.SerializerMethodField()
@@ -945,10 +996,17 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
             "latitude", "longitude", "phone", "email", "website",
             "categories", "cuisines", "facilities", "price_range", "occupancy", "verified", "is_featured",
             "opening_hours", "images", "reviews", "menu_categories", "opening_slots",
+            "opening_status", "opening_hours_display",
             "active_deals", "active_deals_count", "claims_count", "average_rating", "reviews_count", "is_open_now",
             "is_favourite", "has_user_reviewed", "distance", "distance_miles", "menu_type",
             "loyalty_program", "bookings_enabled", "created_at"
         )
+
+    def get_opening_status(self, obj):
+        return obj.get_opening_status()
+
+    def get_opening_hours_display(self, obj):
+        return obj.get_weekly_hours()
         
     def get_reviews(self, obj):
         reviews = obj.reviews.all()[:10]  # Limit to 10 most recent
@@ -1050,6 +1108,7 @@ class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
     deals = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
     is_favourite = serializers.SerializerMethodField()
+    opening_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Restaurant
@@ -1057,8 +1116,11 @@ class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "description", "location", "price_range", "occupancy",
             "verified", "is_featured", "image", "rating", "average_rating", "review_count",
             "distance_km", "distance_miles", "cuisines", "deals", "is_favourite",
-            "loyalty_card_enabled", "bookings_enabled"
+            "loyalty_card_enabled", "bookings_enabled", "opening_status"
         )
+
+    def get_opening_status(self, obj):
+        return obj.get_opening_status()
 
     def get_location(self, obj):
         return {

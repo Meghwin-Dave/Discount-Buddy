@@ -1,10 +1,13 @@
-from datetime import time
+import zoneinfo
+from datetime import datetime, time
 
 from django.test import TestCase
 
 from restaurants.models import City, Country, OpeningSlot, Restaurant
+from restaurants.opening_hours import build_opening_status, build_weekly_hours
 from restaurants.opening_hours_sync import (
     parse_day_hours,
+    parse_day_ranges,
     sync_opening_slots_from_opening_hours,
 )
 from restaurants.serializers import RestaurantSerializer
@@ -94,6 +97,206 @@ class OpeningHoursSyncTests(TestCase):
         )
         self.assertEqual(tuesday.opening_time, time(10, 0))
         self.assertEqual(tuesday.closing_time, time(20, 0))
+
+
+class SplitShiftParsingTests(TestCase):
+    def test_parse_list_of_range_strings(self):
+        self.assertEqual(
+            parse_day_ranges(["11:00-15:00", "19:00-22:45"]),
+            [(time(11, 0), time(15, 0)), (time(19, 0), time(22, 45))],
+        )
+
+    def test_parse_list_of_dicts(self):
+        self.assertEqual(
+            parse_day_ranges(
+                [
+                    {"open": "11:00", "close": "15:00"},
+                    {"open": "19:00", "close": "22:45"},
+                ]
+            ),
+            [(time(11, 0), time(15, 0)), (time(19, 0), time(22, 45))],
+        )
+
+    def test_parse_comma_separated_string(self):
+        self.assertEqual(
+            parse_day_ranges("11:00-15:00, 19:00-22:45"),
+            [(time(11, 0), time(15, 0)), (time(19, 0), time(22, 45))],
+        )
+
+    def test_overnight_range_is_kept(self):
+        self.assertEqual(parse_day_ranges("22:00-02:00"), [(time(22, 0), time(2, 0))])
+
+    def test_ranges_are_sorted_and_deduplicated(self):
+        self.assertEqual(
+            parse_day_ranges(["19:00-22:45", "11:00-15:00", "19:00-22:45"]),
+            [(time(11, 0), time(15, 0)), (time(19, 0), time(22, 45))],
+        )
+
+    def test_closed_markers_yield_no_ranges(self):
+        for value in ("", "closed", None, "nonsense"):
+            self.assertEqual(parse_day_ranges(value), [], msg=value)
+
+
+class SplitShiftSyncTests(TestCase):
+    def setUp(self):
+        self.country = Country.objects.create(name="United Kingdom", code="GB")
+        self.city = City.objects.create(
+            name="London", country=self.country, slug="london"
+        )
+        self.restaurant = Restaurant.objects.create(
+            name="Split Shift", slug="split-shift", city=self.city, address="1 Test St"
+        )
+
+    def test_sync_creates_two_slots_for_one_day(self):
+        synced = sync_opening_slots_from_opening_hours(
+            self.restaurant, {"wednesday": ["11:00-15:00", "19:00-22:45"]}
+        )
+        self.assertEqual(synced, 1)
+
+        slots = OpeningSlot.objects.filter(restaurant=self.restaurant, day_of_week=2)
+        self.assertEqual(slots.count(), 2)
+        self.assertEqual(
+            [s.display_range for s in slots.order_by("opening_time")],
+            ["11 am\u20133 pm", "7\u201310:45 pm"],
+        )
+
+    def test_resync_replaces_previous_slots(self):
+        sync_opening_slots_from_opening_hours(
+            self.restaurant, {"wednesday": ["11:00-15:00", "19:00-22:45"]}
+        )
+        sync_opening_slots_from_opening_hours(
+            self.restaurant, {"wednesday": "11:00-23:00"}
+        )
+
+        slots = OpeningSlot.objects.filter(restaurant=self.restaurant, day_of_week=2)
+        self.assertEqual(slots.count(), 1)
+        self.assertEqual(slots.first().opening_time, time(11, 0))
+
+    def test_sync_leaves_untouched_days_alone(self):
+        sync_opening_slots_from_opening_hours(self.restaurant, {"monday": "09:00-17:00"})
+        sync_opening_slots_from_opening_hours(self.restaurant, {"tuesday": "09:00-17:00"})
+
+        self.assertEqual(
+            OpeningSlot.objects.filter(restaurant=self.restaurant).count(), 2
+        )
+
+
+class OpeningStatusTests(TestCase):
+    """Covers the Google-style status line across the interesting time boundaries."""
+
+    LONDON = zoneinfo.ZoneInfo("Europe/London")
+
+    def setUp(self):
+        self.country = Country.objects.create(name="United Kingdom", code="GB")
+        self.city = City.objects.create(
+            name="London", country=self.country, slug="london"
+        )
+        self.restaurant = Restaurant.objects.create(
+            name="Status Cafe", slug="status-cafe", city=self.city, address="1 Test St"
+        )
+
+    def _slot(self, day, opening, closing, is_closed=False):
+        return OpeningSlot.objects.create(
+            restaurant=self.restaurant,
+            day_of_week=day,
+            opening_time=opening,
+            closing_time=closing,
+            is_closed=is_closed,
+        )
+
+    def _status_at(self, moment):
+        return build_opening_status(
+            self.restaurant.opening_slots.all(),
+            now=moment.replace(tzinfo=self.LONDON),
+        )
+
+    def test_no_slots_returns_none_so_ui_can_hide_the_row(self):
+        self.assertIsNone(self._status_at(datetime(2026, 9, 2, 12, 0)))
+
+    def test_open_during_lunch_shows_lunch_closing_time(self):
+        self._slot(2, time(11, 0), time(15, 0))
+        self._slot(2, time(19, 0), time(22, 45))
+
+        status = self._status_at(datetime(2026, 9, 2, 12, 30))
+        self.assertTrue(status["is_open"])
+        self.assertEqual(status["label"], "Open \u00b7 Closes 3 pm")
+
+    def test_closed_between_shifts_points_at_dinner(self):
+        self._slot(2, time(11, 0), time(15, 0))
+        self._slot(2, time(19, 0), time(22, 45))
+
+        status = self._status_at(datetime(2026, 9, 2, 16, 0))
+        self.assertFalse(status["is_open"])
+        self.assertEqual(status["label"], "Closed \u00b7 Opens 7 pm")
+
+    def test_open_during_dinner_shows_dinner_closing_time(self):
+        self._slot(2, time(11, 0), time(15, 0))
+        self._slot(2, time(19, 0), time(22, 45))
+
+        status = self._status_at(datetime(2026, 9, 2, 20, 0))
+        self.assertEqual(status["label"], "Open \u00b7 Closes 10:45 pm")
+
+    def test_closing_soon_within_final_half_hour(self):
+        self._slot(2, time(11, 0), time(15, 0))
+
+        status = self._status_at(datetime(2026, 9, 2, 14, 45))
+        self.assertEqual(status["state"], "closing_soon")
+        self.assertEqual(status["label"], "Closes soon \u00b7 Closes 3 pm")
+
+    def test_after_last_shift_points_at_next_open_day(self):
+        self._slot(2, time(11, 0), time(15, 0))
+        self._slot(3, time(11, 0), time(15, 0))
+
+        status = self._status_at(datetime(2026, 9, 2, 23, 0))
+        self.assertEqual(status["label"], "Closed \u00b7 Opens 11 am Thu")
+
+    def test_overnight_slot_keeps_restaurant_open_past_midnight(self):
+        self._slot(2, time(22, 0), time(2, 0))
+
+        # 00:30 on Thursday is still inside Wednesday's overnight window.
+        status = self._status_at(datetime(2026, 9, 3, 0, 30))
+        self.assertTrue(status["is_open"])
+        self.assertEqual(status["label"], "Open \u00b7 Closes 2 am")
+
+    def test_equal_times_mean_open_all_day(self):
+        self._slot(2, time(0, 0), time(0, 0))
+
+        status = self._status_at(datetime(2026, 9, 2, 3, 0))
+        self.assertTrue(status["is_open"])
+        self.assertEqual(status["label"], "Open 24 hours")
+
+    def test_days_marked_closed_are_ignored(self):
+        self._slot(2, time(0, 0), time(0, 0), is_closed=True)
+        self._slot(3, time(11, 0), time(15, 0))
+
+        status = self._status_at(datetime(2026, 9, 2, 12, 0))
+        self.assertFalse(status["is_open"])
+        self.assertEqual(status["label"], "Closed \u00b7 Opens 11 am Thu")
+
+    def test_weekly_hours_start_today_and_group_split_shifts(self):
+        self._slot(2, time(11, 0), time(15, 0))
+        self._slot(2, time(19, 0), time(22, 45))
+
+        week = build_weekly_hours(
+            self.restaurant.opening_slots.all(),
+            now=datetime(2026, 9, 2, 12, 0, tzinfo=self.LONDON),
+        )
+
+        self.assertEqual(len(week), 7)
+        self.assertEqual(week[0]["day_name"], "Wednesday")
+        self.assertTrue(week[0]["is_today"])
+        self.assertEqual(week[0]["ranges"], ["11 am\u20133 pm", "7\u201310:45 pm"])
+        self.assertEqual(week[0]["label"], "11 am\u20133 pm, 7\u201310:45 pm")
+        self.assertTrue(week[1]["is_closed"])
+        self.assertEqual(week[1]["label"], "Closed")
+
+    def test_is_open_now_respects_split_shifts(self):
+        self._slot(2, time(11, 0), time(15, 0))
+        self._slot(2, time(19, 0), time(22, 45))
+
+        # Reload so the model reads slots through the same relation the API uses.
+        restaurant = Restaurant.objects.get(pk=self.restaurant.pk)
+        self.assertIsNotNone(restaurant.get_opening_status())
 
 
 from django.utils import timezone

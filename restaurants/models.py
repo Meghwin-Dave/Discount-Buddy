@@ -202,16 +202,22 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
         return self.reviews.count()
     
     def is_open_now(self):
-        """Check if restaurant is currently open"""
-        from datetime import datetime
-        now = datetime.now()
-        current_day = now.weekday()
-        current_time = now.time()
-        
-        slot = self.opening_slots.filter(day_of_week=current_day).first()
-        if not slot or slot.is_closed:
-            return False
-        return slot.opening_time <= current_time <= slot.closing_time
+        """Whether any opening window is currently in progress."""
+        from .opening_hours import find_active_slot
+
+        return find_active_slot(self.opening_slots.all(), timezone.localtime()) is not None
+
+    def get_opening_status(self, now=None):
+        """Google-style status line, or None when no hours are configured."""
+        from .opening_hours import build_opening_status
+
+        return build_opening_status(self.opening_slots.all(), now=now)
+
+    def get_weekly_hours(self, now=None):
+        """Per-weekday opening windows for the detail screen, starting from today."""
+        from .opening_hours import build_weekly_hours
+
+        return build_weekly_hours(self.opening_slots.all(), now=now)
 
     @property
     def last_mystery_visit(self):
@@ -677,7 +683,14 @@ class MenuItem(ProcessedImageMixin, TimeStampedModel):
 
 
 class OpeningSlot(TimeStampedModel):
-    """Restaurant opening time slots"""
+    """
+    One opening window for one weekday.
+
+    A weekday may have several slots so restaurants can express split shifts such
+    as lunch 11:00-15:00 plus dinner 19:00-22:45. A slot whose closing time is
+    before its opening time crosses midnight, and one whose times are equal is
+    open for the full day.
+    """
     DAY_CHOICES = [
         (0, "Monday"),
         (1, "Tuesday"),
@@ -699,7 +712,6 @@ class OpeningSlot(TimeStampedModel):
     is_closed = models.BooleanField(default=False, help_text="If true, restaurant is closed on this day")
     
     class Meta:
-        unique_together = [["restaurant", "day_of_week"]]
         ordering = ["day_of_week", "opening_time"]
         indexes = [
             models.Index(fields=["restaurant", "day_of_week"]),
@@ -710,14 +722,41 @@ class OpeningSlot(TimeStampedModel):
         if self.is_closed:
             return f"{self.restaurant.name} - {day_name} (Closed)"
         return f"{self.restaurant.name} - {day_name} ({self.opening_time} - {self.closing_time})"
-    
-    def is_open_now(self):
-        """Check if restaurant is currently open (simplified - doesn't check time)"""
-        from datetime import datetime
+
+    @property
+    def is_open_all_day(self) -> bool:
+        return self.opening_time == self.closing_time
+
+    @property
+    def spans_midnight(self) -> bool:
+        from .opening_hours import spans_midnight
+
+        return spans_midnight(self)
+
+    @property
+    def display_range(self) -> str:
+        """Google-style window label, e.g. ``11 am-3 pm``."""
+        from core.utils.datetime_format import format_time_range
+
         if self.is_closed:
-            return False
-        current_day = datetime.now().weekday()
-        return current_day == self.day_of_week
+            return "Closed"
+        if self.is_open_all_day:
+            return "Open 24 hours"
+        return format_time_range(self.opening_time, self.closing_time)
+
+    def is_open_now(self):
+        """Whether this specific window is in progress right now."""
+        from django.utils import timezone as dj_timezone
+
+        from .opening_hours import slot_contains
+
+        now_local = dj_timezone.localtime()
+        if now_local.weekday() == self.day_of_week:
+            if slot_contains(self, now_local.time()):
+                return True
+        if (now_local.weekday() - 1) % 7 == self.day_of_week:
+            return slot_contains(self, now_local.time(), started_yesterday=True)
+        return False
 
 
 class RestaurantProfile(TimeStampedModel):
@@ -1066,4 +1105,4 @@ class DealClickLog(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.deal.title} - {self.action_type} at {self.created_at}"
+        return f"{self.deal.title} - {self.action_type} at {self.created_at}"

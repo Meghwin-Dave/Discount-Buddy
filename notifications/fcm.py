@@ -23,6 +23,18 @@ logger = logging.getLogger(__name__)
 _firebase_app = None
 
 
+def _sanitize_data(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """
+    Coerce a data payload to the string-only map FCM requires.
+
+    None values are dropped rather than stringified, so clients never receive the
+    literal "None" and can rely on key absence instead.
+    """
+    if not data:
+        return None
+    return {key: str(value) for key, value in data.items() if value is not None}
+
+
 def initialize_firebase():
     """
     Initialize Firebase Admin SDK.
@@ -121,9 +133,7 @@ def send_fcm_message(
         
         from firebase_admin import messaging
         
-        # Convert data values to strings (FCM requirement)
-        if data:
-            data = {k: str(v) for k, v in data.items()}
+        data = _sanitize_data(data)
         
         # Build notification
         notification = messaging.Notification(
@@ -193,9 +203,7 @@ def send_fcm_multicast(
         
         from firebase_admin import messaging
         
-        # Convert data values to strings
-        if data:
-            data = {k: str(v) for k, v in data.items()}
+        data = _sanitize_data(data)
         
         # Build notification
         notification = messaging.Notification(
