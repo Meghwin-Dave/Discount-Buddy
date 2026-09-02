@@ -155,7 +155,7 @@ We've created an interactive test script for you:
 
 ```bash
 cd /Users/priyansuchavda/Documents/Discount-Buddy
-./test_notification_api.sh
+./testing_scripts/test_notification_api.sh
 ```
 
 The script will:

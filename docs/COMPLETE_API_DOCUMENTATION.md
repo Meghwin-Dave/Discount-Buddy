@@ -1509,7 +1509,7 @@ print(response.json())
 - ✅ View Restaurant Reviews
 - ✅ View Restaurant Bookings
 
-**Test Script**: Run `python test_all_apis.py` to test all endpoints automatically.
+**Test Script**: Run `python testing_scripts/test_all_apis.py` to test all endpoints automatically.
 
 ---
 

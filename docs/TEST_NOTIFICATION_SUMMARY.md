@@ -65,7 +65,7 @@ When you call this endpoint:
 
 ### Interactive Script
 ```bash
-./test_notification_api.sh
+./testing_scripts/test_notification_api.sh
 ```
 Guides you through the entire testing process.
 

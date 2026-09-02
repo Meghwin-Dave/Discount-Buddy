@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Test script to verify all APIs are working
-Run: python test_all_apis.py
+Run: python testing_scripts/test_all_apis.py
 """
 import requests
 import json
