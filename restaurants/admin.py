@@ -68,6 +68,7 @@ class RestaurantAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "city",
+        "menu_type",
         "verified",
         "is_featured",
         "price_range",
@@ -79,7 +80,15 @@ class RestaurantAdmin(admin.ModelAdmin):
         "next_mystery_visit_date",
         "created_at",
     )
-    list_filter = ("verified", "is_featured", "loyalty_card_enabled", "city__country", "city", "created_at")
+    list_filter = (
+        "verified",
+        "is_featured",
+        "menu_type",
+        "loyalty_card_enabled",
+        "city__country",
+        "city",
+        "created_at",
+    )
     search_fields = ("name", "address", "city__name", "description")
     raw_id_fields = ("merchant", "city")
     filter_horizontal = ("categories", "cuisines", "facilities")
@@ -107,6 +116,16 @@ class RestaurantAdmin(admin.ModelAdmin):
                     "opening_hours",
                     "required_visit_gap",
                 )
+            },
+        ),
+        (
+            "Menu",
+            {
+                "fields": ("menu_type",),
+                "description": (
+                    "Use Structured Menu for categories/items, or Image Menu for "
+                    "uploaded menu photos (set Image type = Menu Image below)."
+                ),
             },
         ),
         (
@@ -193,8 +212,8 @@ class DealAdmin(admin.ModelAdmin):
 
 @admin.register(RestaurantImage)
 class RestaurantImageAdmin(admin.ModelAdmin):
-    list_display = ("restaurant", "is_primary", "order", "created_at")
-    list_filter = ("is_primary", "created_at")
+    list_display = ("restaurant", "image_type", "is_primary", "order", "created_at")
+    list_filter = ("image_type", "is_primary", "created_at")
     search_fields = ("restaurant__name", "alt_text")
     raw_id_fields = ("restaurant",)
 
