@@ -1147,7 +1147,7 @@ class HomeScreenView(generics.GenericAPIView):
             favourites = populate_distances(favourites)
 
         # All restaurants (card format) – sorted by most deals first, then visitors scanned QR/claimed deal, then rating
-        all_restaurants = list(queryset.order_by("-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at")[:50])
+        all_restaurants = list(queryset.order_by("-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at"))
         all_restaurants = populate_distances(all_restaurants)
 
         # Aggregate everything in section priority order for normalization.
