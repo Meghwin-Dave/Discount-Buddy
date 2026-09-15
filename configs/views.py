@@ -177,6 +177,10 @@ class UserSpinToWinSpinView(generics.GenericAPIView):
                 spun_at=timezone.now()
             )
 
+        image_url = None
+        if selected_item.image:
+            image_url = request.build_absolute_uri(selected_item.image.url)
+
         return Response({
             "result_id": spin_result.id,
             "is_win": is_win,
@@ -184,6 +188,7 @@ class UserSpinToWinSpinView(generics.GenericAPIView):
             "title": selected_item.title,
             "item_type": selected_item.item_type,
             "promo_code": promo_code_text,
+            "image": image_url,
             "spun_at": spin_result.spun_at
         }, status=status.HTTP_201_CREATED)
 
