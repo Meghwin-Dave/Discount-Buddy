@@ -74,49 +74,65 @@ class AdminSpinHistoryListView(generics.ListAPIView):
 # ============================================================================
 
 class UserSpinToWinWheelView(generics.GenericAPIView):
-    """Get active wheel configuration, visible items, and user's remaining spins for today"""
+    """Get all active wheel configurations, visible items, and user's remaining spins for today.
+
+    Returns a list of all currently active campaigns so the frontend can render
+    multiple simultaneous spinners.
+    """
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
-        campaign = SpinToWinCampaign.objects.filter(is_active=True).first()
-        if not campaign:
+        active_campaigns = SpinToWinCampaign.objects.filter(is_active=True)
+        if not active_campaigns.exists():
             return Response(
-                {"is_active": False, "message": "No active Spin to Win campaign currently available."},
+                {"campaigns": [], "message": "No active Spin to Win campaigns currently available."},
                 status=status.HTTP_200_OK
             )
 
-        items = campaign.items.filter(is_active=True).order_by("slice_index", "id")
-        items_data = SpinToWinItemSerializer(items, many=True, context={"request": request}).data
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        campaigns_data = []
 
-        remaining_spins = campaign.max_spins_per_user_per_day
-        if request.user and request.user.is_authenticated:
-            today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            user_spins_today = UserSpinResult.objects.filter(
-                user=request.user,
-                campaign=campaign,
-                spun_at__gte=today_start
-            ).count()
-            remaining_spins = max(0, campaign.max_spins_per_user_per_day - user_spins_today)
+        for campaign in active_campaigns:
+            items = campaign.items.filter(is_active=True).order_by("slice_index", "id")
+            items_data = SpinToWinItemSerializer(items, many=True, context={"request": request}).data
 
-        return Response({
-            "is_active": True,
-            "campaign_id": campaign.id,
-            "title": campaign.title,
-            "description": campaign.description,
-            "max_spins_per_day": campaign.max_spins_per_user_per_day,
-            "remaining_spins_today": remaining_spins,
-            "slices": items_data
-        }, status=status.HTTP_200_OK)
+            remaining_spins = campaign.max_spins_per_user_per_day
+            if request.user and request.user.is_authenticated:
+                user_spins_today = UserSpinResult.objects.filter(
+                    user=request.user,
+                    campaign=campaign,
+                    spun_at__gte=today_start
+                ).count()
+                remaining_spins = max(0, campaign.max_spins_per_user_per_day - user_spins_today)
+
+            campaigns_data.append({
+                "campaign_id": campaign.id,
+                "title": campaign.title,
+                "description": campaign.description,
+                "max_spins_per_day": campaign.max_spins_per_user_per_day,
+                "remaining_spins_today": remaining_spins,
+                "slices": items_data,
+            })
+
+        return Response({"campaigns": campaigns_data}, status=status.HTTP_200_OK)
 
 
 class UserSpinToWinSpinView(generics.GenericAPIView):
-    """User performs a spin to win a promo code text message"""
+    """User performs a spin on a specific campaign to win a promo code text message.
+
+    Requires ``campaign_id`` in the POST body to target the correct spinner when
+    multiple campaigns are active simultaneously.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        campaign = SpinToWinCampaign.objects.filter(is_active=True).first()
+        campaign_id = request.data.get("campaign_id")
+        if not campaign_id:
+            return Response({"error": "campaign_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        campaign = SpinToWinCampaign.objects.filter(pk=campaign_id, is_active=True).first()
         if not campaign:
-            return Response({"error": "No active campaign found."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Invalid or inactive campaign."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check user's daily spin limit
         today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)

@@ -1132,7 +1132,7 @@ class HomeScreenView(generics.GenericAPIView):
         top_10 = populate_distances(top_10)
         
         # Featured restaurants
-        featured = list(queryset.filter(is_featured=True)[:10])
+        featured = list(queryset.filter(is_featured=True).order_by("-created_at")[:10])
         featured = populate_distances(featured)
 
         # Favourites (Saved restaurants)
@@ -1150,14 +1150,17 @@ class HomeScreenView(generics.GenericAPIView):
         all_restaurants = list(queryset.order_by("-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at")[:50])
         all_restaurants = populate_distances(all_restaurants)
 
-        # Aggregate everything for normalization
-        all_encountered_restaurants = set()
-        for r in nearby_restaurants: all_encountered_restaurants.add(r)
-        for r in now_open_restaurants: all_encountered_restaurants.add(r)
-        for r in top_10: all_encountered_restaurants.add(r)
-        for r in featured: all_encountered_restaurants.add(r)
-        for r in favourites: all_encountered_restaurants.add(r)
-        for r in all_restaurants: all_encountered_restaurants.add(r)
+        # Aggregate everything in section priority order for normalization.
+        # Use an insertion-ordered dict (keyed by id) instead of a set so that
+        # section ordering is preserved when we later build restaurants_dict.
+        seen_ids = {}
+        for r in nearby_restaurants:     seen_ids.setdefault(r.id, r)
+        for r in now_open_restaurants:   seen_ids.setdefault(r.id, r)
+        for r in top_10:                 seen_ids.setdefault(r.id, r)
+        for r in featured:               seen_ids.setdefault(r.id, r)
+        for r in favourites:             seen_ids.setdefault(r.id, r)
+        for r in all_restaurants:        seen_ids.setdefault(r.id, r)
+        all_encountered_restaurants = seen_ids.values()
 
         # Collect unique Deals and Cuisines
         all_deals_ids = set()
@@ -1201,11 +1204,12 @@ class HomeScreenView(generics.GenericAPIView):
             "deals": deals_dict,
             "cuisines": cuisines_dict,
             "sections": {
-                "nearby": [r.id for r in nearby_restaurants],
-                "now_open": [r.id for r in now_open_restaurants],
-                "top_10": [r.id for r in top_10],
-                "featured": [r.id for r in featured],
-                "favourites": [r.id for r in favourites]
+                "nearby": [str(r.id) for r in nearby_restaurants],
+                "now_open": [str(r.id) for r in now_open_restaurants],
+                "top_10": [str(r.id) for r in top_10],
+                "featured": [str(r.id) for r in featured],
+                "favourites": [str(r.id) for r in favourites],
+                "all_restaurants": [str(r.id) for r in all_restaurants],
             }
         })
 

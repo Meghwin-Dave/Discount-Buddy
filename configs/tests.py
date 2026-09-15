@@ -116,37 +116,46 @@ class AdminPanelAndSpinToWinTests(TestCase):
         })
         self.assertEqual(item2_res.status_code, status.HTTP_201_CREATED)
 
-        # 3. User checks wheel info
+        # 3. User checks wheel info — response is now a list of campaigns
         self.client.force_authenticate(user=self.customer_user)
         wheel_res = self.client.get("/api/v1/user/user/spin-to-win/wheel")
         self.assertEqual(wheel_res.status_code, status.HTTP_200_OK)
         wheel_data = wheel_res.json()
-        self.assertTrue(wheel_data["is_active"])
-        self.assertEqual(len(wheel_data["slices"]), 2)
+        self.assertIn("campaigns", wheel_data)
+        campaigns_list = wheel_data["campaigns"]
+        self.assertEqual(len(campaigns_list), 1)
+        campaign_entry = campaigns_list[0]
+        self.assertEqual(campaign_entry["campaign_id"], campaign_id)
+        self.assertEqual(len(campaign_entry["slices"]), 2)
 
-        # 4. User performs 1st spin (campaign total spins = 1 < min 3 threshold)
-        spin1_res = self.client.post("/api/v1/user/user/spin-to-win/spin")
+        # 4. Spin without campaign_id must return 400
+        no_id_res = self.client.post("/api/v1/user/user/spin-to-win/spin", {})
+        self.assertEqual(no_id_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("campaign_id", no_id_res.json().get("error", ""))
+
+        # 5. User performs 1st spin (campaign total spins = 1 < min 3 threshold)
+        spin1_res = self.client.post("/api/v1/user/user/spin-to-win/spin", {"campaign_id": campaign_id})
         self.assertEqual(spin1_res.status_code, status.HTTP_201_CREATED)
         spin1_data = spin1_res.json()
         self.assertEqual(spin1_data["title"], "Try Again")
         self.assertFalse(spin1_data["is_win"])
 
-        # 5. Perform 2nd spin (total spins = 2 < 3)
-        spin2_res = self.client.post("/api/v1/user/user/spin-to-win/spin")
+        # 6. Perform 2nd spin (total spins = 2 < 3)
+        spin2_res = self.client.post("/api/v1/user/user/spin-to-win/spin", {"campaign_id": campaign_id})
         self.assertEqual(spin2_res.status_code, status.HTTP_201_CREATED)
 
-        # 6. Perform 3rd spin (total spins = 3 >= 3 threshold -> 50% OFF becomes eligible!)
+        # 7. Perform 3rd spin (total spins = 3 >= 3 threshold -> 50% OFF becomes eligible!)
         from unittest.mock import patch
         item2_obj = SpinToWinItem.objects.get(pk=item2_res.json()["id"])
         with patch("random.choices", return_value=[item2_obj]):
-            spin3_res = self.client.post("/api/v1/user/user/spin-to-win/spin")
+            spin3_res = self.client.post("/api/v1/user/user/spin-to-win/spin", {"campaign_id": campaign_id})
             self.assertEqual(spin3_res.status_code, status.HTTP_201_CREATED)
             spin3_data = spin3_res.json()
             self.assertTrue(spin3_data["is_win"])
             self.assertEqual(spin3_data["title"], "50% OFF Promo Code")
             self.assertIn("MEGA50", spin3_data["promo_code"])
 
-        # 7. Check User My Prizes
+        # 8. Check User My Prizes
         prizes_res = self.client.get("/api/v1/user/user/spin-to-win/my-prizes")
         self.assertEqual(prizes_res.status_code, status.HTTP_200_OK)
         prizes_json = prizes_res.json()
@@ -154,3 +163,61 @@ class AdminPanelAndSpinToWinTests(TestCase):
         self.assertEqual(len(prizes), 1)
         self.assertIn("MEGA50", prizes[0]["promo_code"])
 
+    def test_multiple_simultaneous_active_campaigns(self):
+        """Wheel endpoint returns all active campaigns; spin targets a specific one by campaign_id."""
+        self.client.force_authenticate(user=self.admin_user)
+
+        # Create two active campaigns
+        camp1_res = self.client.post("/api/v1/admin/admin/spin-to-win/campaigns", {
+            "title": "Weekend Wheel",
+            "is_active": True,
+            "max_spins_per_user_per_day": 2,
+        })
+        self.assertEqual(camp1_res.status_code, status.HTTP_201_CREATED)
+        camp1_id = camp1_res.json()["id"]
+
+        camp2_res = self.client.post("/api/v1/admin/admin/spin-to-win/campaigns", {
+            "title": "VIP Spinner",
+            "is_active": True,
+            "max_spins_per_user_per_day": 1,
+        })
+        self.assertEqual(camp2_res.status_code, status.HTTP_201_CREATED)
+        camp2_id = camp2_res.json()["id"]
+
+        # Add a slice to each campaign
+        self.client.post("/api/v1/admin/admin/spin-to-win/items", {
+            "campaign": camp1_id, "title": "Try Again", "item_type": "empty",
+            "probability_weight": 1, "slice_index": 0, "is_active": True,
+        })
+        self.client.post("/api/v1/admin/admin/spin-to-win/items", {
+            "campaign": camp2_id, "title": "VIP Prize", "item_type": "promocode",
+            "promo_code_value": "VIP10OFF", "probability_weight": 1, "slice_index": 0, "is_active": True,
+        })
+
+        # Wheel must return both campaigns
+        self.client.force_authenticate(user=self.customer_user)
+        wheel_res = self.client.get("/api/v1/user/user/spin-to-win/wheel")
+        self.assertEqual(wheel_res.status_code, status.HTTP_200_OK)
+        campaigns_list = wheel_res.json()["campaigns"]
+        self.assertEqual(len(campaigns_list), 2)
+        returned_ids = {c["campaign_id"] for c in campaigns_list}
+        self.assertIn(camp1_id, returned_ids)
+        self.assertIn(camp2_id, returned_ids)
+
+        # Spinning with an inactive/non-existent campaign_id returns 400
+        bad_spin = self.client.post("/api/v1/user/user/spin-to-win/spin", {"campaign_id": 99999})
+        self.assertEqual(bad_spin.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Spin against camp2 specifically
+        spin_res = self.client.post("/api/v1/user/user/spin-to-win/spin", {"campaign_id": camp2_id})
+        self.assertEqual(spin_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(spin_res.json()["title"], "VIP Prize")
+
+        # Deactivate camp1 — wheel should now return only camp2
+        self.client.force_authenticate(user=self.admin_user)
+        self.client.patch(f"/api/v1/admin/admin/spin-to-win/campaigns/{camp1_id}", {"is_active": False})
+        self.client.force_authenticate(user=self.customer_user)
+        wheel_res2 = self.client.get("/api/v1/user/user/spin-to-win/wheel")
+        campaigns_list2 = wheel_res2.json()["campaigns"]
+        self.assertEqual(len(campaigns_list2), 1)
+        self.assertEqual(campaigns_list2[0]["campaign_id"], camp2_id)
