@@ -221,3 +221,62 @@ class AdminPanelAndSpinToWinTests(TestCase):
         campaigns_list2 = wheel_res2.json()["campaigns"]
         self.assertEqual(len(campaigns_list2), 1)
         self.assertEqual(campaigns_list2[0]["campaign_id"], camp2_id)
+
+    def test_empty_campaign_does_not_expose_other_campaign_slices(self):
+        """A new active campaign with no slices must not leak previous campaign items."""
+        self.client.force_authenticate(user=self.admin_user)
+
+        old_res = self.client.post("/api/v1/admin/admin/spin-to-win/campaigns", {
+            "title": "Existing Wheel",
+            "is_active": True,
+            "max_spins_per_user_per_day": 1,
+        })
+        self.assertEqual(old_res.status_code, status.HTTP_201_CREATED)
+        old_id = old_res.json()["id"]
+
+        self.client.post("/api/v1/admin/admin/spin-to-win/items", {
+            "campaign": old_id, "title": "yele", "item_type": "discount",
+            "promo_code_value": "6996", "probability_weight": 10, "slice_index": 2,
+            "is_active": True,
+        })
+        self.client.post("/api/v1/admin/admin/spin-to-win/items", {
+            "campaign": old_id, "title": "bkl", "item_type": "empty",
+            "probability_weight": 10, "slice_index": 1, "is_active": True,
+        })
+
+        new_res = self.client.post("/api/v1/admin/admin/spin-to-win/campaigns", {
+            "title": "Empty New Wheel",
+            "is_active": True,
+            "max_spins_per_user_per_day": 1,
+        })
+        self.assertEqual(new_res.status_code, status.HTTP_201_CREATED)
+        new_id = new_res.json()["id"]
+        self.assertEqual(new_res.json().get("items") or [], [])
+
+        # Admin campaign-by-id stays scoped to that campaign
+        detail_res = self.client.get(f"/api/v1/admin/admin/spin-to-win/campaigns/{new_id}")
+        self.assertEqual(detail_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_res.json()["items"], [])
+
+        # Admin items list must filter by campaign instead of returning every slice
+        filtered_res = self.client.get("/api/v1/admin/admin/spin-to-win/items", {"campaign": new_id})
+        self.assertEqual(filtered_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(filtered_res.json()["count"], 0)
+        self.assertEqual(filtered_res.json()["results"], [])
+
+        old_items_res = self.client.get("/api/v1/admin/admin/spin-to-win/items", {"campaign": old_id})
+        self.assertEqual(old_items_res.json()["count"], 2)
+        self.assertTrue(all(item["campaign"] == old_id for item in old_items_res.json()["results"]))
+
+        # Wheel omits the empty campaign; remaining slices stay on the old campaign_id
+        self.client.force_authenticate(user=self.customer_user)
+        wheel_res = self.client.get("/api/v1/user/user/spin-to-win/wheel")
+        self.assertEqual(wheel_res.status_code, status.HTTP_200_OK)
+        campaigns_list = wheel_res.json()["campaigns"]
+        returned_ids = {c["campaign_id"] for c in campaigns_list}
+        self.assertNotIn(new_id, returned_ids)
+        self.assertIn(old_id, returned_ids)
+
+        old_entry = next(c for c in campaigns_list if c["campaign_id"] == old_id)
+        self.assertEqual(len(old_entry["slices"]), 2)
+        self.assertTrue(all(slice_item["campaign"] == old_id for slice_item in old_entry["slices"]))

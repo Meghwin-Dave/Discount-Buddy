@@ -60,6 +60,7 @@ class AdminSpinToWinItemViewSet(viewsets.ModelViewSet):
     queryset = SpinToWinItem.objects.all()
     serializer_class = SpinToWinItemSerializer
     permission_classes = [IsSuperUserOrAdmin]
+    filterset_fields = ["campaign"]
 
 
 class AdminSpinHistoryListView(generics.ListAPIView):
@@ -93,7 +94,11 @@ class UserSpinToWinWheelView(generics.GenericAPIView):
         campaigns_data = []
 
         for campaign in active_campaigns:
-            items = campaign.items.filter(is_active=True).order_by("slice_index", "id")
+            items = list(campaign.items.filter(is_active=True).order_by("slice_index", "id"))
+            # A campaign with no slices must not appear on the wheel, otherwise
+            # clients that flatten all campaigns would render another campaign's slices.
+            if not items:
+                continue
             items_data = SpinToWinItemSerializer(items, many=True, context={"request": request}).data
 
             remaining_spins = campaign.max_spins_per_user_per_day
@@ -113,6 +118,12 @@ class UserSpinToWinWheelView(generics.GenericAPIView):
                 "remaining_spins_today": remaining_spins,
                 "slices": items_data,
             })
+
+        if not campaigns_data:
+            return Response(
+                {"campaigns": [], "message": "No active Spin to Win campaigns currently available."},
+                status=status.HTTP_200_OK
+            )
 
         return Response({"campaigns": campaigns_data}, status=status.HTTP_200_OK)
 
