@@ -64,6 +64,12 @@ IMAGE_MODEL_REGISTRY: dict[str, ImageFieldConfig] = {
         large_field="image_large",
         upload_prefix="banners",
     ),
+    "notifications.adminnotificationcampaign": ImageFieldConfig(
+        source_field="image",
+        medium_field="image_medium",
+        large_field="image_large",
+        upload_prefix="notification_campaigns",
+    ),
     "users.userprofile": ImageFieldConfig(
         source_field="profile_picture",
         medium_field="profile_picture_medium",

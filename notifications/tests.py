@@ -71,3 +71,193 @@ class BookingNotificationTimezoneTests(TestCase):
             notification.payload["booking_date"],
             "2026-01-15T09:00:00+00:00",
         )
+
+
+class AdminPromoCampaignTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        from users.models import UserProfile
+        from restaurants.models import SavedRestaurant
+
+        self.SavedRestaurant = SavedRestaurant
+        self.client = APIClient()
+        self.admin_user = User.objects.create_superuser(
+            username="promo-admin",
+            email="promo-admin@test.com",
+            password="adminpassword",
+        )
+        UserProfile.objects.create(user=self.admin_user, role=UserProfile.ROLE_ADMIN)
+
+        self.customer = User.objects.create_user(
+            username="promo-customer",
+            email="promo-customer@test.com",
+            password="customerpassword",
+        )
+        UserProfile.objects.create(user=self.customer, role=UserProfile.ROLE_CUSTOMER)
+
+        self.other_customer = User.objects.create_user(
+            username="promo-other",
+            email="promo-other@test.com",
+            password="customerpassword",
+        )
+        UserProfile.objects.create(user=self.other_customer, role=UserProfile.ROLE_CUSTOMER)
+
+        self.city = City.objects.create(
+            name="Manchester",
+            country=Country.objects.create(name="England", code="EN"),
+            slug="manchester-promo",
+        )
+        self.restaurant = Restaurant.objects.create(
+            name="Promo Pizza",
+            slug="promo-pizza",
+            city=self.city,
+            address="2 Test St",
+            verified=True,
+            is_active=True,
+        )
+        SavedRestaurant.objects.create(user=self.customer, restaurant=self.restaurant)
+
+    def test_non_admin_cannot_send(self):
+        self.client.force_authenticate(user=self.customer)
+        res = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "Hello",
+            "message": "World",
+            "audience": "all_customers",
+        })
+        self.assertEqual(res.status_code, 403)
+
+    def test_manual_send_all_customers_without_gemini(self):
+        self.client.force_authenticate(user=self.admin_user)
+        res = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "Diwali deals",
+            "message": "Festival offers are live",
+            "audience": "all_customers",
+        })
+        self.assertEqual(res.status_code, 201, res.content)
+        from notifications.models import Notification
+        notes = Notification.objects.filter(notification_type="PROMO")
+        self.assertEqual(notes.count(), 2)
+        self.assertTrue(all(n.title == "Diwali deals" for n in notes))
+        self.assertTrue(all("restaurant_id" not in (n.payload or {}) for n in notes))
+
+    def test_missing_title_is_400(self):
+        self.client.force_authenticate(user=self.admin_user)
+        res = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "  ",
+            "message": "Body",
+            "audience": "all_customers",
+        })
+        self.assertEqual(res.status_code, 400)
+
+    def test_favourites_only_saved_users(self):
+        self.client.force_authenticate(user=self.admin_user)
+        preview = self.client.post("/api/v1/admin/admin/notifications/campaigns/preview", {
+            "audience": "restaurant_favourites",
+            "restaurant": self.restaurant.id,
+        })
+        self.assertEqual(preview.status_code, 200, preview.content)
+        self.assertEqual(preview.json()["recipient_count"], 1)
+
+        res = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "New pizza deal",
+            "message": "20% off tonight",
+            "audience": "restaurant_favourites",
+            "restaurant": self.restaurant.id,
+        })
+        self.assertEqual(res.status_code, 201, res.content)
+        from notifications.models import Notification
+        notes = Notification.objects.filter(notification_type="PROMO")
+        self.assertEqual(notes.count(), 1)
+        self.assertEqual(notes[0].user_id, self.customer.id)
+        self.assertEqual(notes[0].payload["restaurant_id"], str(self.restaurant.id))
+        self.assertEqual(notes[0].payload["restaurant_slug"], "promo-pizza")
+
+    def test_scheduled_campaign_does_not_send_until_due(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from notifications.models import Notification, AdminNotificationCampaign
+        from notifications.tasks import send_due_admin_campaigns
+
+        self.client.force_authenticate(user=self.admin_user)
+        later = timezone.now() + timedelta(hours=2)
+        res = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "Later pizza",
+            "message": "Tonight only",
+            "audience": "all_customers",
+            "scheduled_at": later.isoformat(),
+        })
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["status"], "scheduled")
+        self.assertEqual(Notification.objects.filter(notification_type="PROMO").count(), 0)
+
+        send_due_admin_campaigns()
+        self.assertEqual(Notification.objects.filter(notification_type="PROMO").count(), 0)
+
+        campaign = AdminNotificationCampaign.objects.get(pk=res.json()["id"])
+        campaign.scheduled_at = timezone.now() - timedelta(minutes=1)
+        campaign.save(update_fields=["scheduled_at"])
+        send_due_admin_campaigns()
+        self.assertEqual(Notification.objects.filter(notification_type="PROMO").count(), 2)
+        campaign.refresh_from_db()
+        self.assertEqual(campaign.status, "sent")
+
+    def test_past_schedule_is_400(self):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        self.client.force_authenticate(user=self.admin_user)
+        res = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "Too late",
+            "message": "Already passed",
+            "audience": "all_customers",
+            "scheduled_at": (timezone.now() - timedelta(minutes=1)).isoformat(),
+        })
+        self.assertEqual(res.status_code, 400)
+
+    def test_all_customers_with_restaurant_payload(self):
+        self.client.force_authenticate(user=self.admin_user)
+        res = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "Try Promo Pizza",
+            "message": "Tap to open the restaurant",
+            "audience": "all_customers",
+            "restaurant": self.restaurant.id,
+        })
+        self.assertEqual(res.status_code, 201, res.content)
+        from notifications.models import Notification
+        notes = list(Notification.objects.filter(notification_type="PROMO"))
+        self.assertEqual(len(notes), 2)
+        for note in notes:
+            self.assertEqual(note.payload["restaurant_id"], str(self.restaurant.id))
+            self.assertEqual(note.payload["restaurant_slug"], "promo-pizza")
+
+    def test_generate_without_key_does_not_block_send(self):
+        from django.test import override_settings
+
+        self.client.force_authenticate(user=self.admin_user)
+        with override_settings(GEMINI_API_KEY=""):
+            gen = self.client.post("/api/v1/admin/admin/notifications/campaigns/generate", {
+                "prompt": "Diwali festival",
+            })
+            self.assertEqual(gen.status_code, 503)
+        send = self.client.post("/api/v1/admin/admin/notifications/campaigns", {
+            "title": "Still works",
+            "message": "Manual send",
+            "audience": "all_customers",
+        })
+        self.assertEqual(send.status_code, 201, send.content)
+
+    def test_customer_list_exposes_payload_image(self):
+        from notifications.models import Notification
+        Notification.objects.create(
+            user=self.customer,
+            title="Promo",
+            message="Hello",
+            notification_type="PROMO",
+            payload={"image": "https://example.com/promo.webp", "restaurant_id": "1"},
+        )
+        self.client.force_authenticate(user=self.customer)
+        res = self.client.get("/user/api/notifications")
+        self.assertEqual(res.status_code, 200, res.content)
+        first = res.json()["results"][0]
+        self.assertEqual(first["image"], "https://example.com/promo.webp")
+

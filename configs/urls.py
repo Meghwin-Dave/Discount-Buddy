@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from core.views import AdminBannerViewSet
+from notifications.admin_views import AdminNotificationCampaignViewSet
 from .views import (
     AppConfigViewSet,
     AdminSpinToWinCampaignViewSet,
@@ -16,6 +17,7 @@ router.register(r'configs', AppConfigViewSet, basename='config')
 router.register(r'admin/banners', AdminBannerViewSet, basename='admin-banner')
 router.register(r'admin/spin-to-win/campaigns', AdminSpinToWinCampaignViewSet, basename='admin-spin-campaign')
 router.register(r'admin/spin-to-win/items', AdminSpinToWinItemViewSet, basename='admin-spin-item')
+router.register(r'admin/notifications/campaigns', AdminNotificationCampaignViewSet, basename='admin-notification-campaign')
 
 urlpatterns = [
     # Version check endpoint

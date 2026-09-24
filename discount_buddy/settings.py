@@ -309,6 +309,9 @@ SWAGGER_SETTINGS = {
 # Firebase service account credentials
 FIREBASE_CREDENTIALS_PATH = BASE_DIR / "firebase-credentials.json"
 
+# Optional Gemini drafts for admin promo notifications. Send still works without this.
+GEMINI_API_KEY = (os.environ.get("GEMINI_API_KEY") or "").strip().strip('"').strip("'")
+
 # ============================================================================
 # CELERY CONFIGURATION (for async push notifications)
 # ============================================================================
@@ -359,6 +362,10 @@ CELERY_BEAT_SCHEDULE = {
     "send-booking-reminders": {
         "task": "restaurants.tasks.send_booking_reminders",
         "schedule": crontab(minute="*/5"),
+    },
+    "send-due-admin-notification-campaigns": {
+        "task": "notifications.tasks.send_due_admin_campaigns",
+        "schedule": crontab(minute="*"),
     },
 }
 

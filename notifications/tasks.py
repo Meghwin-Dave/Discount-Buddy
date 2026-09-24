@@ -76,7 +76,8 @@ def send_push_notification(notification_id: str):
                     token=device_token.token,
                     title=notification.title,
                     body=notification.message,
-                    data=fcm_data
+                    data=fcm_data,
+                    image_url=(notification.payload or {}).get("image"),
                 )
                 
                 if sent:
@@ -163,7 +164,8 @@ def send_bulk_push_notifications(notification_ids: List[str]):
                         token=device_token.token,
                         title=notification.title,
                         body=notification.message,
-                        data=fcm_data
+                        data=fcm_data,
+                        image_url=(notification.payload or {}).get("image"),
                     )
                     
                     if sent:
@@ -190,3 +192,35 @@ def send_bulk_push_notifications(notification_ids: List[str]):
         logger.error(f"Error sending bulk push notifications: {str(e)}")
         # Re-raise to trigger Celery retry
         raise
+
+
+@shared_task
+def send_admin_campaign_task(campaign_id: str, image_url: str | None = None):
+    """Fan out an admin promotional campaign to customers."""
+    from .services import NotificationService
+
+    return NotificationService.send_admin_campaign(campaign_id, image_url=image_url)
+
+
+@shared_task
+def send_due_admin_campaigns():
+    """Pick up campaigns whose scheduled_at has arrived."""
+    from django.utils import timezone
+    from django.db import transaction
+    from .models import AdminNotificationCampaign
+
+    now = timezone.now()
+    with transaction.atomic():
+        due = list(
+            AdminNotificationCampaign.objects.select_for_update().filter(
+                status=AdminNotificationCampaign.STATUS_SCHEDULED,
+                scheduled_at__lte=now,
+            )
+        )
+        for campaign in due:
+            campaign.status = AdminNotificationCampaign.STATUS_QUEUED
+            campaign.save(update_fields=["status", "updated_at"])
+
+    for campaign in due:
+        send_admin_campaign_task.delay(str(campaign.id), campaign.fcm_image_url or None)
+    return len(due)

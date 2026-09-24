@@ -4,10 +4,11 @@ Handles business logic for creating and sending notifications.
 """
 from typing import Optional, Dict, Any
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from core.utils.datetime_format import format_datetime_label, to_iso_local, to_iso_utc
-from .models import Notification, DeviceToken
+from .models import Notification, DeviceToken, AdminNotificationCampaign
 from users.models import User
 
 
@@ -605,3 +606,88 @@ class NotificationService:
             Number of unread notifications
         """
         return Notification.objects.filter(user=user, is_read=False).count()
+
+    @staticmethod
+    def customer_recipients():
+        from users.models import UserProfile
+
+        return (
+            User.objects.filter(is_active=True, is_merchant=False, is_superuser=False, is_staff=False)
+            .filter(Q(profile__role=UserProfile.ROLE_CUSTOMER) | Q(profile__isnull=True))
+            .distinct()
+        )
+
+    @staticmethod
+    def resolve_campaign_recipients(audience: str, restaurant=None):
+        qs = NotificationService.customer_recipients()
+        if audience == AdminNotificationCampaign.AUDIENCE_RESTAURANT_FAVOURITES:
+            if restaurant is None:
+                return qs.none()
+            return qs.filter(saved_restaurants__restaurant=restaurant)
+        return qs
+
+    @staticmethod
+    def build_campaign_payload(campaign: AdminNotificationCampaign, image_url: Optional[str] = None) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "click_action": "FLUTTER_NOTIFICATION_CLICK",
+            "type": "promo",
+            "campaign_id": str(campaign.id),
+        }
+        if image_url:
+            payload["image"] = image_url
+        if campaign.restaurant_id:
+            payload["restaurant_id"] = str(campaign.restaurant_id)
+            payload["restaurant_slug"] = campaign.restaurant.slug
+        return payload
+
+    @staticmethod
+    def send_admin_campaign(campaign_id: str, image_url: Optional[str] = None) -> int:
+        """
+        Fan out an admin promo campaign to matching customers and enqueue push.
+        """
+        campaign = AdminNotificationCampaign.objects.select_related("restaurant").get(pk=campaign_id)
+        if campaign.status == AdminNotificationCampaign.STATUS_SENT:
+            return campaign.recipient_count
+        if campaign.status == AdminNotificationCampaign.STATUS_SCHEDULED:
+            return 0
+        image_url = image_url or campaign.fcm_image_url or None
+        campaign.status = AdminNotificationCampaign.STATUS_SENDING
+        campaign.save(update_fields=["status", "updated_at"])
+
+        recipients = list(NotificationService.resolve_campaign_recipients(campaign.audience, campaign.restaurant))
+        payload = NotificationService.build_campaign_payload(campaign, image_url=image_url)
+
+        created_ids = []
+        chunk_size = 500
+        try:
+            for i in range(0, len(recipients), chunk_size):
+                chunk = recipients[i : i + chunk_size]
+                notifications = [
+                    Notification(
+                        user=user,
+                        title=campaign.title,
+                        message=campaign.message,
+                        notification_type="PROMO",
+                        payload=payload,
+                        source_id=campaign.id,
+                        source_type="admin_campaign",
+                    )
+                    for user in chunk
+                ]
+                created = Notification.objects.bulk_create(notifications)
+                created_ids.extend(str(n.id) for n in created)
+
+            if created_ids:
+                from .tasks import send_bulk_push_notifications
+                send_bulk_push_notifications.delay(created_ids)
+
+            campaign.recipient_count = len(created_ids)
+            campaign.status = AdminNotificationCampaign.STATUS_SENT
+            campaign.error_message = ""
+            campaign.save(update_fields=["recipient_count", "status", "error_message", "updated_at"])
+            return len(created_ids)
+        except Exception as exc:
+            campaign.status = AdminNotificationCampaign.STATUS_FAILED
+            campaign.error_message = str(exc)
+            campaign.save(update_fields=["status", "error_message", "updated_at"])
+            return 0
