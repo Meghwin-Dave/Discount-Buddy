@@ -25,6 +25,7 @@ urlpatterns = [
     path("delete-account", DeleteAccountPageView.as_view()),
     # ===================== Admin / App APIs =====================
     path("admin/api/", include("configs.urls")),
+    path("api/v1/admin/analytics/", include("core.analytics_urls")),
     path("api/v1/admin/", include("configs.urls")),
     path("api/v1/user/", include("configs.urls")),
     path("user/api/configs/", include("configs.urls")),

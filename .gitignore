@@ -51,6 +51,11 @@ client_secret*.json
 # Firebase credentials
 firebase-credentials.json
 
+# GA4 Data API service account (never commit)
+discount-buddy-*.json
+*analytics.json
+configs/discountbuddy-analytics.json
+
 # IDE
 .vscode/
 .idea/

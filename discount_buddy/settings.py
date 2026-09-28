@@ -312,6 +312,9 @@ FIREBASE_CREDENTIALS_PATH = BASE_DIR / "firebase-credentials.json"
 # Optional Gemini drafts for admin promo notifications. Send still works without this.
 GEMINI_API_KEY = (os.environ.get("GEMINI_API_KEY") or "").strip().strip('"').strip("'")
 
+# GA4 Data API for the admin owner dashboard. Credentials path is env-only.
+GA4_PROPERTY_ID = (os.environ.get("GA4_PROPERTY_ID") or "").strip()
+
 # ============================================================================
 # CELERY CONFIGURATION (for async push notifications)
 # ============================================================================
