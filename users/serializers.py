@@ -136,6 +136,33 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+class TokenLoginRequestSerializer(serializers.Serializer):
+    """Documented login body for Swagger (POST /user/api/users/token)."""
+
+    email = serializers.EmailField(help_text="Account email")
+    password = serializers.CharField(
+        write_only=True,
+        help_text="Account password",
+        style={"input_type": "password"},
+    )
+
+
+class TokenRefreshRequestSerializer(serializers.Serializer):
+    refresh = serializers.CharField(help_text="Refresh token from login response")
+
+
+class SocialLoginRequestSerializer(serializers.Serializer):
+    provider = serializers.ChoiceField(
+        choices=["google", "apple"],
+        required=False,
+        help_text="OAuth provider (optional if token type implies it)",
+    )
+    token = serializers.CharField(required=False, help_text="Provider ID token")
+    id_token = serializers.CharField(required=False)
+    credential = serializers.CharField(required=False)
+    identityToken = serializers.CharField(required=False)
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     role = serializers.ChoiceField(

@@ -55,11 +55,13 @@ class AnalyticsDashboardApiTests(TestCase):
         mock_cls = patcher.start()
         self.addCleanup(patcher.stop)
         instance = mock_cls.return_value
-        instance.get_overview.return_value = data["overview"]
-        instance.get_events.return_value = data["events"]
-        instance.get_platform_breakdown.return_value = data["platforms"]
-        instance.get_app_versions.return_value = data["app_versions"]
-        instance.get_daily_users.return_value = data["daily_users"]
+        instance.get_core_dashboard_bundle.return_value = {
+            "overview": data["overview"],
+            "events": data["events"],
+            "platforms": data["platforms"],
+            "app_versions": data["app_versions"],
+            "daily_users": data["daily_users"],
+        }
         instance.get_realtime_users.return_value = data["realtime"]
         instance.get_event_breakdown.side_effect = Exception("custom dimension unavailable")
         return instance
@@ -107,17 +109,23 @@ class AnalyticsDashboardApiTests(TestCase):
         second = self.client.get(DASHBOARD_URL)
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(instance.get_overview.call_count, 1)
+        self.assertEqual(instance.get_core_dashboard_bundle.call_count, 1)
         self.assertEqual(instance.get_realtime_users.call_count, 1)
 
     @override_settings(GA4_PROPERTY_ID="524706224")
     def test_engagement_includes_event_parameter_details(self):
         instance = self._patch_ga()
-        instance.get_events.return_value = [
-            {"event_name": "login", "count": 6},
-            {"event_name": "sign_up", "count": 3},
-            {"event_name": "spin_completed", "count": 5},
-        ]
+        instance.get_core_dashboard_bundle.return_value = {
+            "overview": _mock_analytics()["overview"],
+            "events": [
+                {"event_name": "login", "count": 6},
+                {"event_name": "sign_up", "count": 3},
+                {"event_name": "spin_completed", "count": 5},
+            ],
+            "platforms": _mock_analytics()["platforms"],
+            "app_versions": _mock_analytics()["app_versions"],
+            "daily_users": _mock_analytics()["daily_users"],
+        }
 
         def breakdown(*, event_name, dimension, start_date, end_date, **kwargs):
             if event_name == "login" and "method" in dimension:

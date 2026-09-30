@@ -1,3 +1,5 @@
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,6 +15,26 @@ from core.services.google_analytics import GoogleAnalyticsService
 class AnalyticsDashboardAPIView(APIView):
     permission_classes = [IsAuthenticated, IsSuperUserOrAdmin]
 
+    @swagger_auto_schema(
+        tags=["Analytics"],
+        operation_summary="Admin analytics dashboard",
+        manual_parameters=[
+            openapi.Parameter(
+                "start_date",
+                openapi.IN_QUERY,
+                description="GA4 start (e.g. 7daysAgo, 30daysAgo, 20260101)",
+                type=openapi.TYPE_STRING,
+                default="30daysAgo",
+            ),
+            openapi.Parameter(
+                "end_date",
+                openapi.IN_QUERY,
+                description="GA4 end (e.g. today)",
+                type=openapi.TYPE_STRING,
+                default="today",
+            ),
+        ],
+    )
     def get(self, request):
         start_date = request.query_params.get("start_date", "30daysAgo")
         end_date = request.query_params.get("end_date", "today")

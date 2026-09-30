@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -32,6 +33,12 @@ class AdminNotificationCampaignViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    @swagger_auto_schema(
+        tags=["Admin notifications"],
+        operation_summary="Create and send (or schedule) a promo campaign",
+        request_body=AdminNotificationCampaignSerializer,
+        consumes=["application/json", "multipart/form-data"],
+    )
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -51,6 +58,12 @@ class AdminNotificationCampaignViewSet(viewsets.ModelViewSet):
         output = self.get_serializer(campaign)
         return Response(output.data, status=status.HTTP_201_CREATED)
 
+    @swagger_auto_schema(
+        method="post",
+        tags=["Admin notifications"],
+        operation_summary="Preview recipient count",
+        request_body=AdminNotificationPreviewSerializer,
+    )
     @action(detail=False, methods=["post"], url_path="preview")
     def preview(self, request):
         serializer = AdminNotificationPreviewSerializer(data=request.data)
@@ -68,6 +81,12 @@ class AdminNotificationCampaignViewSet(viewsets.ModelViewSet):
         count = NotificationService.resolve_campaign_recipients(audience, restaurant).count()
         return Response({"recipient_count": count})
 
+    @swagger_auto_schema(
+        method="post",
+        tags=["Admin notifications"],
+        operation_summary="Generate title/body with Gemini",
+        request_body=AdminNotificationGenerateSerializer,
+    )
     @action(detail=False, methods=["post"], url_path="generate")
     def generate(self, request):
         serializer = AdminNotificationGenerateSerializer(data=request.data)

@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from drf_yasg.utils import swagger_auto_schema
 import jwt
 import requests
 from jwt.algorithms import RSAAlgorithm
@@ -23,6 +24,9 @@ from .serializers import (
     RegisterSerializer,
     UserSerializer,
     CustomTokenObtainPairSerializer,
+    TokenLoginRequestSerializer,
+    TokenRefreshRequestSerializer,
+    SocialLoginRequestSerializer,
     RegisterInitSerializer,
     RegisterCompleteSerializer,
     VerifyOTPSerializer,
@@ -377,9 +381,28 @@ class LoginView(TokenObtainPairView):
     permission_classes = [permissions.AllowAny]
     serializer_class = CustomTokenObtainPairSerializer
 
+    @swagger_auto_schema(
+        tags=["Auth"],
+        operation_summary="Obtain JWT (login)",
+        operation_description="Returns `access` and `refresh` JWT tokens.",
+        request_body=TokenLoginRequestSerializer,
+        security=[],
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
 
 class RefreshTokenView(TokenRefreshView):
     permission_classes = [permissions.AllowAny]
+
+    @swagger_auto_schema(
+        tags=["Auth"],
+        operation_summary="Refresh JWT access token",
+        request_body=TokenRefreshRequestSerializer,
+        security=[],
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
 
 
 class SocialLoginView(APIView):
@@ -389,6 +412,12 @@ class SocialLoginView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
+    @swagger_auto_schema(
+        tags=["Auth"],
+        operation_summary="OAuth login (Google / Apple)",
+        request_body=SocialLoginRequestSerializer,
+        security=[],
+    )
     def post(self, request, *args, **kwargs):
         provider = request.data.get("provider")
         token_str = (

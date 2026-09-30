@@ -6,13 +6,19 @@ from django.db.models import F
 from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from users.permissions import IsSuperUserOrAdmin
 
 from .models import AppConfig, SpinToWinCampaign, SpinToWinItem, UserSpinResult
 from .serializers import (
-    AppConfigSerializer, VersionCheckRequestSerializer, VersionCheckResponseSerializer,
-    SpinToWinCampaignSerializer, SpinToWinItemSerializer, UserSpinResultSerializer
+    AppConfigSerializer,
+    VersionCheckRequestSerializer,
+    VersionCheckResponseSerializer,
+    SpinCampaignIdRequestSerializer,
+    SpinToWinCampaignSerializer,
+    SpinToWinItemSerializer,
+    UserSpinResultSerializer,
 )
 from .services import AppConfigService
 
@@ -24,6 +30,13 @@ class AppConfigViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return [IsAuthenticated()]
 
+    @swagger_auto_schema(
+        method="post",
+        operation_summary="Check app version (public)",
+        request_body=VersionCheckRequestSerializer,
+        responses={200: VersionCheckResponseSerializer},
+        security=[],
+    )
     @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='version/check')
     def check_version(self, request):
         try:
@@ -82,6 +95,11 @@ class UserSpinToWinWheelView(generics.GenericAPIView):
     """
     permission_classes = [AllowAny]
 
+    @swagger_auto_schema(
+        tags=["Spin to Win"],
+        operation_summary="List active spin wheels",
+        security=[],
+    )
     def get(self, request, *args, **kwargs):
         active_campaigns = SpinToWinCampaign.objects.filter(is_active=True)
         if not active_campaigns.exists():
@@ -136,6 +154,11 @@ class UserSpinToWinSpinView(generics.GenericAPIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @swagger_auto_schema(
+        tags=["Spin to Win"],
+        operation_summary="Perform a spin",
+        request_body=SpinCampaignIdRequestSerializer,
+    )
     def post(self, request, *args, **kwargs):
         campaign_id = request.data.get("campaign_id")
         if not campaign_id:

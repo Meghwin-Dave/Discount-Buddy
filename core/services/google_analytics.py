@@ -1,6 +1,7 @@
 from django.conf import settings
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import (
+    BatchRunReportsRequest,
     DateRange,
     Dimension,
     Filter,
@@ -22,19 +23,54 @@ class GoogleAnalyticsService:
     def property_name(self):
         return f"properties/{self.property_id}"
 
-    def get_overview(self, start_date="7daysAgo", end_date="today"):
-        request = RunReportRequest(
-            property=self.property_name,
-            date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
-            metrics=[
-                Metric(name="activeUsers"),
-                Metric(name="newUsers"),
-                Metric(name="sessions"),
-                Metric(name="eventCount"),
-                Metric(name="screenPageViews"),
-            ],
+    def get_core_dashboard_bundle(self, start_date="30daysAgo", end_date="today"):
+        """One GA4 round-trip for overview, daily users, events, platforms, and app versions."""
+        date_ranges = [DateRange(start_date=start_date, end_date=end_date)]
+        requests = [
+            RunReportRequest(
+                date_ranges=date_ranges,
+                metrics=[
+                    Metric(name="activeUsers"),
+                    Metric(name="newUsers"),
+                    Metric(name="sessions"),
+                    Metric(name="eventCount"),
+                    Metric(name="screenPageViews"),
+                ],
+            ),
+            RunReportRequest(
+                date_ranges=date_ranges,
+                dimensions=[Dimension(name="date")],
+                metrics=[Metric(name="activeUsers"), Metric(name="newUsers")],
+            ),
+            RunReportRequest(
+                date_ranges=date_ranges,
+                dimensions=[Dimension(name="eventName")],
+                metrics=[Metric(name="eventCount")],
+            ),
+            RunReportRequest(
+                date_ranges=date_ranges,
+                dimensions=[Dimension(name="platform")],
+                metrics=[Metric(name="activeUsers")],
+            ),
+            RunReportRequest(
+                date_ranges=date_ranges,
+                dimensions=[Dimension(name="appVersion")],
+                metrics=[Metric(name="activeUsers")],
+            ),
+        ]
+        batch = self.client.batch_run_reports(
+            BatchRunReportsRequest(property=self.property_name, requests=requests)
         )
-        response = self.client.run_report(request)
+        reports = batch.reports
+        return {
+            "overview": self._parse_overview_report(reports[0]),
+            "daily_users": self._parse_daily_users_report(reports[1]),
+            "events": self._parse_events_report(reports[2]),
+            "platforms": self._parse_platform_report(reports[3]),
+            "app_versions": self._parse_app_versions_report(reports[4]),
+        }
+
+    def _parse_overview_report(self, response):
         if not response.rows:
             return {
                 "active_users": 0,
@@ -51,6 +87,61 @@ class GoogleAnalyticsService:
             "event_count": _metric_int(row, 3),
             "screen_views": _metric_int(row, 4),
         }
+
+    def _parse_daily_users_report(self, response):
+        rows = [
+            {
+                "date": row.dimension_values[0].value,
+                "active_users": _metric_int(row, 0),
+                "new_users": _metric_int(row, 1),
+            }
+            for row in response.rows
+        ]
+        return sorted(rows, key=lambda item: item["date"])
+
+    def _parse_events_report(self, response):
+        events = [
+            {
+                "event_name": row.dimension_values[0].value,
+                "count": _metric_int(row, 0),
+            }
+            for row in response.rows
+        ]
+        return sorted(events, key=lambda item: item["count"], reverse=True)
+
+    def _parse_platform_report(self, response):
+        return [
+            {
+                "platform": row.dimension_values[0].value,
+                "active_users": _metric_int(row, 0),
+            }
+            for row in response.rows
+        ]
+
+    def _parse_app_versions_report(self, response):
+        rows = [
+            {
+                "version": row.dimension_values[0].value,
+                "active_users": _metric_int(row, 0),
+            }
+            for row in response.rows
+        ]
+        return sorted(rows, key=lambda item: item["active_users"], reverse=True)
+
+    def get_overview(self, start_date="7daysAgo", end_date="today"):
+        request = RunReportRequest(
+            property=self.property_name,
+            date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+            metrics=[
+                Metric(name="activeUsers"),
+                Metric(name="newUsers"),
+                Metric(name="sessions"),
+                Metric(name="eventCount"),
+                Metric(name="screenPageViews"),
+            ],
+        )
+        response = self.client.run_report(request)
+        return self._parse_overview_report(response)
 
     def get_daily_users(self, start_date="30daysAgo", end_date="today"):
         request = RunReportRequest(

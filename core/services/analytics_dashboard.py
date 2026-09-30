@@ -1,3 +1,5 @@
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, time, timedelta
 
 from django.core.cache import cache
@@ -10,8 +12,11 @@ from restaurants.models import Booking, DealClickLog, DealUse, Restaurant, Resta
 
 from .google_analytics import GoogleAnalyticsService
 
-HISTORICAL_CACHE_SECONDS = 600
+HISTORICAL_CACHE_SECONDS = 1800
+HISTORICAL_STALE_SECONDS = 86400
 REALTIME_CACHE_SECONDS = 45
+BUILD_LOCK_SECONDS = 300
+ENGAGEMENT_DETAIL_WORKERS = 8
 
 BEHAVIOUR_EVENTS = {
     "restaurant_views": "restaurant_viewed",
@@ -121,14 +126,58 @@ def ga_range_to_datetimes(start_date: str, end_date: str):
     return parse_bound(start_date, False), parse_bound(end_date, True)
 
 
+def _cache_keys(start_date, end_date):
+    base = f"analytics:dashboard:v4:{start_date}:{end_date}"
+    return base, f"{base}:stale", f"{base}:lock"
+
+
+def _store_historical_caches(start_date, end_date, payload):
+    fresh_key, stale_key, _ = _cache_keys(start_date, end_date)
+    cache.set(fresh_key, payload, HISTORICAL_CACHE_SECONDS)
+    cache.set(stale_key, payload, HISTORICAL_STALE_SECONDS)
+
+
+def _schedule_historical_refresh(start_date, end_date):
+    _, _, lock_key = _cache_keys(start_date, end_date)
+    if not cache.add(lock_key, "1", BUILD_LOCK_SECONDS):
+        return
+
+    def _job():
+        try:
+            payload = _build_historical(start_date, end_date)
+            _store_historical_caches(start_date, end_date, payload)
+        finally:
+            cache.delete(lock_key)
+
+    threading.Thread(target=_job, daemon=True).start()
+
+
 def get_dashboard(start_date="30daysAgo", end_date="today"):
-    historical_key = f"analytics:dashboard:v3:{start_date}:{end_date}"
+    fresh_key, stale_key, lock_key = _cache_keys(start_date, end_date)
     realtime_key = "analytics:realtime"
 
-    historical = cache.get(historical_key)
+    historical = cache.get(fresh_key)
     if historical is None:
-        historical = _build_historical(start_date, end_date)
-        cache.set(historical_key, historical, HISTORICAL_CACHE_SECONDS)
+        stale = cache.get(stale_key)
+        if stale is not None:
+            historical = stale
+            _schedule_historical_refresh(start_date, end_date)
+        else:
+            if cache.add(lock_key, "1", BUILD_LOCK_SECONDS):
+                try:
+                    historical = _build_historical(start_date, end_date)
+                    _store_historical_caches(start_date, end_date, historical)
+                finally:
+                    cache.delete(lock_key)
+            else:
+                for _ in range(40):
+                    historical = cache.get(fresh_key) or cache.get(stale_key)
+                    if historical is not None:
+                        break
+                    threading.Event().wait(0.25)
+                if historical is None:
+                    historical = _build_historical(start_date, end_date)
+                    _store_historical_caches(start_date, end_date, historical)
 
     realtime = cache.get(realtime_key)
     if realtime is None:
@@ -141,40 +190,71 @@ def get_dashboard(start_date="30daysAgo", end_date="today"):
 
 def _build_historical(start_date, end_date):
     analytics = GoogleAnalyticsService()
-    events = analytics.get_events(start_date=start_date, end_date=end_date)
+    bundle = analytics.get_core_dashboard_bundle(start_date=start_date, end_date=end_date)
+    events = bundle["events"]
     counts = {item["event_name"]: item["count"] for item in events}
     window_start, window_end = ga_range_to_datetimes(start_date, end_date)
 
+    engagement = _build_engagement(
+        analytics,
+        start_date,
+        end_date,
+        window_start,
+        window_end,
+        counts,
+    )
+
     return {
         "range": {"start_date": start_date, "end_date": end_date},
-        "overview": analytics.get_overview(start_date=start_date, end_date=end_date),
-        "platforms": analytics.get_platform_breakdown(start_date=start_date, end_date=end_date),
-        "app_versions": analytics.get_app_versions(start_date=start_date, end_date=end_date),
-        "daily_users": analytics.get_daily_users(start_date=start_date, end_date=end_date),
+        "overview": bundle["overview"],
+        "platforms": bundle["platforms"],
+        "app_versions": bundle["app_versions"],
+        "daily_users": bundle["daily_users"],
         "events": events,
-        "engagement": [
-            {
-                "event_name": event_name,
-                "label": label,
-                "count": counts.get(event_name, 0),
-                "details": _event_details(
-                    analytics,
-                    event_name,
-                    start_date,
-                    end_date,
-                    window_start,
-                    window_end,
-                    counts.get(event_name, 0),
-                ),
-            }
-            for event_name, label in ENGAGEMENT_EVENTS
-        ],
+        "engagement": engagement,
         "behaviour": {
             key: counts.get(event_name, 0)
             for key, event_name in BEHAVIOUR_EVENTS.items()
         },
         "business": _business_metrics(window_start, window_end),
     }
+
+
+def _build_engagement(analytics, start_date, end_date, window_start, window_end, counts):
+    def row(event_name, label, details):
+        return {
+            "event_name": event_name,
+            "label": label,
+            "count": counts.get(event_name, 0),
+            "details": details,
+        }
+
+    tasks = []
+    with ThreadPoolExecutor(max_workers=ENGAGEMENT_DETAIL_WORKERS) as pool:
+        for event_name, label in ENGAGEMENT_EVENTS:
+            count = counts.get(event_name, 0)
+            if count <= 0:
+                tasks.append((event_name, label, []))
+                continue
+            fut = pool.submit(
+                _event_details,
+                analytics,
+                event_name,
+                start_date,
+                end_date,
+                window_start,
+                window_end,
+                count,
+            )
+            tasks.append((event_name, label, fut))
+
+    engagement = []
+    for event_name, label, item in tasks:
+        if isinstance(item, list):
+            engagement.append(row(event_name, label, item))
+        else:
+            engagement.append(row(event_name, label, item.result()))
+    return engagement
 
 
 def _event_details(analytics, event_name, start_date, end_date, window_start, window_end, count):

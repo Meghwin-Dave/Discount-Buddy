@@ -15,6 +15,10 @@ class VersionCheckRequestSerializer(serializers.Serializer):
     platform = serializers.ChoiceField(choices=['android', 'ios'])
     version = serializers.CharField(max_length=50)
 
+class SpinCampaignIdRequestSerializer(serializers.Serializer):
+    campaign_id = serializers.IntegerField(help_text="Active spin campaign id")
+
+
 class VersionCheckResponseSerializer(serializers.Serializer):
     is_update_available = serializers.BooleanField()
     update_type = serializers.CharField()
