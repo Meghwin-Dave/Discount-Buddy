@@ -50,3 +50,56 @@ class BookingDatetimeFormatTests(TestCase):
             self.assertIn("T09:00:00", local_iso)
             self.assertTrue(local_iso.endswith(offset))
             self.assertEqual(to_iso_utc(utc), utc.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+    def test_serializers_dst_handling(self):
+        """Test that serializers output London local time under both BST and GMT."""
+        from configs.models import UserSpinResult
+        from configs.serializers import UserSpinResultSerializer
+        from notifications.models import Notification
+        from notifications.serializers import NotificationSerializer
+        from restaurants.models import Booking, DealUse, Restaurant
+        from restaurants.serializers import (
+            BookingSerializer,
+            BookingCreateSerializer,
+            MerchantBookingListSerializer,
+            DealUseSerializer,
+        )
+
+        summer_dt = self._utc(2026, 7, 10, 15, 30)  # 16:30 BST (+01:00)
+        winter_dt = self._utc(2026, 12, 10, 15, 30)  # 15:30 GMT (+00:00)
+
+        # 1. Spin
+        spin_summer = UserSpinResult(spun_at=summer_dt)
+        spin_winter = UserSpinResult(spun_at=winter_dt)
+        self.assertEqual(UserSpinResultSerializer(spin_summer).data["spun_at"], "2026-07-10T16:30:00+01:00")
+        self.assertEqual(UserSpinResultSerializer(spin_winter).data["spun_at"], "2026-12-10T15:30:00+00:00")
+
+        # 2. Notification
+        notif_summer = Notification(created_at=summer_dt)
+        notif_winter = Notification(created_at=winter_dt)
+        self.assertEqual(NotificationSerializer(notif_summer).data["created_at"], "2026-07-10T16:30:00+01:00")
+        self.assertEqual(NotificationSerializer(notif_winter).data["created_at"], "2026-12-10T15:30:00+00:00")
+
+        # 3. Booking
+        rest = Restaurant.objects.first()
+        b_summer = Booking(restaurant=rest, booking_date=summer_dt, created_at=summer_dt, updated_at=summer_dt)
+        b_winter = Booking(restaurant=rest, booking_date=winter_dt, created_at=winter_dt, updated_at=winter_dt)
+        self.assertEqual(BookingSerializer(b_summer).data["booking_date"], "2026-07-10T16:30:00+01:00")
+        self.assertEqual(BookingSerializer(b_winter).data["booking_date"], "2026-12-10T15:30:00+00:00")
+        self.assertEqual(BookingCreateSerializer(b_summer).data["booking_date"], "2026-07-10T16:30:00+01:00")
+        self.assertEqual(BookingCreateSerializer(b_winter).data["booking_date"], "2026-12-10T15:30:00+00:00")
+        self.assertEqual(MerchantBookingListSerializer(b_summer).data["booking_date"], "2026-07-10T16:30:00+01:00")
+        self.assertEqual(MerchantBookingListSerializer(b_winter).data["booking_date"], "2026-12-10T15:30:00+00:00")
+
+        # 4. DealUse
+        d_summer = DealUse(used_at=summer_dt, created_at=summer_dt)
+        d_winter = DealUse(used_at=winter_dt, created_at=winter_dt)
+        self.assertEqual(DealUseSerializer(d_summer).data["used_at"], "2026-07-10T16:30:00+01:00")
+        self.assertEqual(DealUseSerializer(d_winter).data["used_at"], "2026-12-10T15:30:00+00:00")
+
+    def test_spin_view_response_timestamp(self):
+        """UserSpinToWinSpinView payload includes local ISO string with dynamic offset."""
+        summer_dt = self._utc(2026, 7, 10, 15, 30)
+        winter_dt = self._utc(2026, 12, 10, 15, 30)
+        self.assertEqual(to_iso_local(summer_dt), "2026-07-10T16:30:00+01:00")
+        self.assertEqual(to_iso_local(winter_dt), "2026-12-10T15:30:00+00:00")

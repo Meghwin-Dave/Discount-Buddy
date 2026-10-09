@@ -68,3 +68,13 @@ class UserSpinResultSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "spun_at"]
 
+    def to_representation(self, instance):
+        from core.utils.datetime_format import to_iso_local
+
+        data = super().to_representation(instance)
+        if instance.spun_at:
+            data["spun_at"] = to_iso_local(instance.spun_at)
+        if instance.claimed_at:
+            data["claimed_at"] = to_iso_local(instance.claimed_at)
+        return data
+

@@ -1,15 +1,25 @@
-from django.conf import settings
-from google.analytics.data_v1beta import BetaAnalyticsDataClient
-from google.analytics.data_v1beta.types import (
-    BatchRunReportsRequest,
-    DateRange,
-    Dimension,
-    Filter,
-    FilterExpression,
-    Metric,
-    RunRealtimeReportRequest,
-    RunReportRequest,
-)
+try:
+    from google.analytics.data_v1beta import BetaAnalyticsDataClient
+    from google.analytics.data_v1beta.types import (
+        BatchRunReportsRequest,
+        DateRange,
+        Dimension,
+        Filter,
+        FilterExpression,
+        Metric,
+        RunRealtimeReportRequest,
+        RunReportRequest,
+    )
+except ImportError:
+    BetaAnalyticsDataClient = None
+    BatchRunReportsRequest = None
+    DateRange = None
+    Dimension = None
+    Filter = None
+    FilterExpression = None
+    Metric = None
+    RunRealtimeReportRequest = None
+    RunReportRequest = None
 
 
 class GoogleAnalyticsService:

@@ -28,6 +28,14 @@ class NotificationSerializer(serializers.ModelSerializer):
         payload = obj.payload or {}
         return payload.get("image")
 
+    def to_representation(self, instance):
+        from core.utils.datetime_format import to_iso_local
+
+        data = super().to_representation(instance)
+        if instance.created_at:
+            data["created_at"] = to_iso_local(instance.created_at)
+        return data
+
 
 class DeviceTokenSerializer(serializers.ModelSerializer):
     """Serializer for DeviceToken model"""

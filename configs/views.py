@@ -231,6 +231,8 @@ class UserSpinToWinSpinView(generics.GenericAPIView):
         if selected_item.image:
             image_url = request.build_absolute_uri(selected_item.image.url)
 
+        from core.utils.datetime_format import to_iso_local
+
         return Response({
             "result_id": spin_result.id,
             "is_win": is_win,
@@ -239,7 +241,7 @@ class UserSpinToWinSpinView(generics.GenericAPIView):
             "item_type": selected_item.item_type,
             "promo_code": promo_code_text,
             "image": image_url,
-            "spun_at": spin_result.spun_at
+            "spun_at": to_iso_local(spin_result.spun_at)
         }, status=status.HTTP_201_CREATED)
 
 

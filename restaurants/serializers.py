@@ -587,6 +587,18 @@ class DealUseSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.qr_code.url)
         return obj.qr_code.url
 
+    def to_representation(self, instance):
+        from core.utils.datetime_format import to_iso_local
+
+        data = super().to_representation(instance)
+        if instance.used_at:
+            data["used_at"] = to_iso_local(instance.used_at)
+        if instance.redeemed_at:
+            data["redeemed_at"] = to_iso_local(instance.redeemed_at)
+        if instance.created_at:
+            data["created_at"] = to_iso_local(instance.created_at)
+        return data
+
 
 class DealUseCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating deal uses"""
@@ -686,6 +698,14 @@ class ReviewSerializer(serializers.ModelSerializer):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
 
+    def to_representation(self, instance):
+        from core.utils.datetime_format import to_iso_local
+
+        data = super().to_representation(instance)
+        if instance.created_at:
+            data["created_at"] = to_iso_local(instance.created_at)
+        return data
+
 
 class ReviewCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating reviews"""
@@ -745,7 +765,10 @@ class BookingSerializer(serializers.ModelSerializer):
         return obj.can_cancel()
     
     def get_restaurant_city_name(self, obj):
-        return obj.restaurant.city.name if obj.restaurant and obj.restaurant.city else None
+        try:
+            return obj.restaurant.city.name if obj.restaurant and obj.restaurant.city else None
+        except Exception:
+            return None
 
     
     def validate_number_of_guests(self, value):
@@ -756,6 +779,20 @@ class BookingSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
+
+    def to_representation(self, instance):
+        from core.utils.datetime_format import to_iso_local
+
+        data = super().to_representation(instance)
+        if instance.booking_date:
+            data["booking_date"] = to_iso_local(instance.booking_date)
+        if instance.arrived_time:
+            data["arrived_time"] = to_iso_local(instance.arrived_time)
+        if instance.created_at:
+            data["created_at"] = to_iso_local(instance.created_at)
+        if instance.updated_at:
+            data["updated_at"] = to_iso_local(instance.updated_at)
+        return data
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
@@ -785,6 +822,14 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = self.context['request'].user
         return Booking.objects.create(user=user, **validated_data)
+
+    def to_representation(self, instance):
+        from core.utils.datetime_format import to_iso_local
+
+        data = super().to_representation(instance)
+        if instance.booking_date:
+            data["booking_date"] = to_iso_local(instance.booking_date)
+        return data
 
 
 class BookingManagementSerializer(BookingSerializer):
@@ -816,6 +861,18 @@ class MerchantBookingListSerializer(serializers.ModelSerializer):
             "no_show_notes",
             "updated_at",
         )
+
+    def to_representation(self, instance):
+        from core.utils.datetime_format import to_iso_local
+
+        data = super().to_representation(instance)
+        if instance.booking_date:
+            data["booking_date"] = to_iso_local(instance.booking_date)
+        if instance.arrived_time:
+            data["arrived_time"] = to_iso_local(instance.arrived_time)
+        if instance.updated_at:
+            data["updated_at"] = to_iso_local(instance.updated_at)
+        return data
 
 
 class BookingArriveSerializer(serializers.Serializer):
