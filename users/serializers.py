@@ -27,10 +27,24 @@ class UserProfileSerializer(ProfilePictureOutputMixin, serializers.ModelSerializ
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer(read_only=True)
     loyalty_stats = serializers.SerializerMethodField()
+    is_admin = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("id", "email", "username", "first_name", "last_name", "is_merchant", "is_customer", "profile", "loyalty_stats")
+        fields = (
+            "id", "email", "username", "first_name", "last_name",
+            "is_merchant", "is_customer", "is_admin", "is_superuser", "is_staff",
+            "profile", "loyalty_stats",
+        )
+        read_only_fields = ("is_superuser", "is_staff")
+
+    def get_is_admin(self, obj):
+        profile = getattr(obj, "profile", None)
+        return bool(
+            obj.is_superuser
+            or obj.is_staff
+            or (profile is not None and profile.role == UserProfile.ROLE_ADMIN)
+        )
 
     def get_loyalty_stats(self, obj):
         from restaurants.models import UserRestaurantLoyalty
