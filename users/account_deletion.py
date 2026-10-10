@@ -1,4 +1,4 @@
-import random
+import secrets
 import threading
 from datetime import timedelta
 
@@ -38,7 +38,7 @@ def send_account_deletion_otp(email: str) -> bool:
         is_verified=True, verified_at=timezone.now()
     )
 
-    otp_code = f"{random.randint(0, 9999):04d}"
+    otp_code = f"{secrets.randbelow(10000):04d}"
     expires_at = timezone.now() + timedelta(minutes=OTP_EXPIRY_MINUTES)
     RegistrationOTP.objects.create(
         email=email,

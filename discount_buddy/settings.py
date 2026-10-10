@@ -216,12 +216,28 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    "EXCEPTION_HANDLER": "users.throttles.friendly_exception_handler",
+    # Throttle classes are opted into per view (users/throttles.py); these are
+    # only the rates. Generous on purpose: shared mobile/office IPs are common.
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_ip": "30/min",
+        "username_check": "60/min",
+        "partner_request": "5/hour",
+        "otp_send": "6/hour",
+        "otp_verify": "10/hour",
+    },
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ],
 }
+
+# Number of reverse proxies in front of Django (e.g. 1 for nginx only). DRF's
+# throttles use it to pick the real client IP from X-Forwarded-For; leave unset
+# if unsure (a wrong value makes every user share one rate-limit bucket).
+if os.environ.get("NUM_PROXIES", "").isdigit():
+    REST_FRAMEWORK["NUM_PROXIES"] = int(os.environ["NUM_PROXIES"])
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),

@@ -1,5 +1,5 @@
 import math
-import random
+import secrets
 from dataclasses import dataclass
 from io import BytesIO
 
@@ -46,7 +46,7 @@ def km_to_miles(km):
 
 def _generate_six_digit_code() -> str:
     """Generate a random 6‑digit numeric code as a zero-padded string."""
-    return f"{random.randint(0, 999999):06d}"
+    return f"{secrets.randbelow(1000000):06d}"
 
 
 def _generate_unique_redemption_code() -> str:
@@ -83,7 +83,10 @@ def _build_qr_image(payload: str) -> ContentFile:
     return ContentFile(buffer.read(), name="qr.png")
 
 
-@transaction.atomic
+class DealClaimError(Exception):
+    """A claim was refused after re-checking the deal under lock."""
+
+
 def create_deal_use_with_redemption(
     *, user: User, deal: Deal | None = None, restaurant: Restaurant | None = None, is_loyalty_only: bool = False, notes: str | None = ""
 ) -> DealUse:
@@ -91,41 +94,65 @@ def create_deal_use_with_redemption(
     Create a DealUse record for a user/deal pair (or user/restaurant for loyalty-only),
     assigning a unique 6-digit redemption code and generating a QR code image.
 
-    Also increments the Deal.used_count atomically if a deal is provided.
+    For deals, the deal row is locked while the limits are re-checked, the claim
+    is inserted and used_count is bumped, so concurrent claims (double taps,
+    several devices) can't exceed max_uses / max_per_user. Raises DealClaimError
+    if the deal is no longer claimable.
     """
     if deal and not restaurant:
         restaurant = deal.restaurant
 
-    # Create the DealUse with a unique redemption code, retrying on collisions.
-    while True:
-        redemption_code = _generate_unique_redemption_code()
-        try:
-            deal_use = DealUse.objects.create(
-                user=user,
-                deal=deal,
-                restaurant=restaurant,
-                is_loyalty_only=is_loyalty_only,
-                notes=notes or "",
-                redemption_code=redemption_code,
-            )
-            break
-        except IntegrityError:
-            # Very unlikely: another row grabbed the same code at the same time.
-            continue
+    with transaction.atomic():
+        if deal:
+            locked = Deal.objects.select_for_update().get(pk=deal.pk)
+            if not locked.is_active_now():
+                raise DealClaimError("This deal is not currently active")
+            if DealUse.objects.filter(user=user, deal=locked).count() >= locked.max_per_user:
+                raise DealClaimError("You have reached the maximum uses for this deal")
 
-    # Encode a stable payload that the restaurant app can scan and send back.
-    # Format: DEALUSE:<id>:<code>
-    qr_payload = f"DEALUSE:{deal_use.id}:{deal_use.redemption_code}"
-    qr_file = _build_qr_image(qr_payload)
-    deal_use.qr_code.save(qr_file.name, qr_file, save=True)
+        # Retry on the (unlikely) redemption-code collision. The savepoint keeps
+        # an IntegrityError from poisoning the outer transaction.
+        for _ in range(20):
+            try:
+                with transaction.atomic():
+                    deal_use = DealUse.objects.create(
+                        user=user,
+                        deal=deal,
+                        restaurant=restaurant,
+                        is_loyalty_only=is_loyalty_only,
+                        notes=notes or "",
+                        redemption_code=_generate_unique_redemption_code(),
+                    )
+                break
+            except IntegrityError:
+                continue
+        else:
+            raise RuntimeError("Could not allocate a unique redemption code")
 
-    # Increment used_count atomically if deal exists.
+        if deal:
+            from django.db.models import F
+
+            Deal.objects.filter(pk=deal.pk).update(used_count=F("used_count") + 1)
+
     if deal:
-        from django.db.models import F
-
-        Deal.objects.filter(pk=deal.pk).update(used_count=F("used_count") + 1)
         # Refresh used_count on the instance if needed by callers.
         deal.refresh_from_db(fields=["used_count"])
+
+    # QR generation/file write happens outside the lock and transaction.
+    # Format: DEALUSE:<id>:<code>
+    try:
+        qr_payload = f"DEALUSE:{deal_use.id}:{deal_use.redemption_code}"
+        qr_file = _build_qr_image(qr_payload)
+        deal_use.qr_code.save(qr_file.name, qr_file, save=True)
+    except Exception:
+        # Previously the whole function was one transaction, so a QR failure
+        # undid the claim. Keep that: undo it explicitly.
+        deal_use.delete()
+        if deal:
+            from django.db.models import F
+
+            Deal.objects.filter(pk=deal.pk).update(used_count=F("used_count") - 1)
+        raise
 
     return deal_use
 
@@ -493,3 +520,23 @@ def redeem_deal(
     return RedemptionResult(True, "Deal redeemed successfully.", deal_use, loyalty_result)
 
 
+
+
+def attach_latest_mystery_visits(restaurants) -> None:
+    """
+    One query instead of one per restaurant: pre-load each restaurant's latest
+    submitted mystery visit (same ordering as Restaurant.get_latest_mystery_visit)
+    so get_leaderboard_score() doesn't hit the DB per row.
+    """
+    from .models import MysteryVisit
+
+    restaurants = list(restaurants)
+    latest = {}
+    visits = MysteryVisit.objects.filter(
+        restaurant_id__in=[r.id for r in restaurants],
+        status=MysteryVisit.STATUS_SUBMITTED,
+    ).order_by("-submitted_at", "-scheduled_for")
+    for visit in visits:
+        latest.setdefault(visit.restaurant_id, visit)
+    for restaurant in restaurants:
+        restaurant._latest_mystery_visit_cached = latest.get(restaurant.id)

@@ -2,7 +2,7 @@ import math
 from django.core.mail import send_mail
 from django.conf import settings
 from django.db import models
-from django.db.models import Q, Count, F, Avg, Sum, Value
+from django.db.models import Q, Count, F, Avg, Sum, Value, OuterRef, Subquery, Prefetch
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.core.cache import cache
@@ -15,6 +15,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import PermissionDenied, ValidationError, NotFound
 from users.merchant_utils import get_merchant_for_user, user_is_merchant
 from users.models import UserProfile
+from users.throttles import PartnerRequestThrottle
 from vouchers.models import Merchant
 from .filters import RestaurantFilter, DealFilter
 from .models import (
@@ -90,7 +91,15 @@ from .serializers import (
     LoyaltyRedemptionRecordSerializer,
     LoyaltyRewardClaimSerializer,
 )
-from .services import redeem_deal, calculate_distance, km_to_miles, claim_loyalty_reward, build_loyalty_progress_payload
+from .services import (
+    redeem_deal,
+    calculate_distance,
+    km_to_miles,
+    claim_loyalty_reward,
+    build_loyalty_progress_payload,
+    attach_latest_mystery_visits,
+    DealClaimError,
+)
 from users.permissions import (
     IsMerchant,
     IsUser,
@@ -118,6 +127,60 @@ def get_merchant_restaurants_queryset(user):
         Q(merchant=merchant) | Q(owner_profile__user=user)
     ).distinct()
 
+
+
+def annotate_restaurant_stats(queryset):
+    """
+    Rating / review / active-deal / claim counters as correlated subqueries.
+
+    The previous Avg + 3x Count(distinct=True) over reviews x deals x deal_uses
+    joins produced a row-multiplying cartesian product; values are identical.
+    """
+    now = timezone.now()
+
+    def per_restaurant(model_qs, agg):
+        return Subquery(
+            model_qs.filter(restaurant=OuterRef("pk"))
+            .order_by()
+            .values("restaurant")
+            .annotate(v=agg)
+            .values("v")
+        )
+
+    active_deals = Deal.objects.filter(is_active=True, start_date__lte=now, end_date__gte=now)
+    return queryset.annotate(
+        average_rating=Coalesce(
+            per_restaurant(Review.objects, Avg("rating")), Value(0.0), output_field=models.FloatField()
+        ),
+        reviews_count=Coalesce(
+            per_restaurant(Review.objects, Count("pk")), Value(0), output_field=models.IntegerField()
+        ),
+        active_deals_count=Coalesce(
+            per_restaurant(active_deals, Count("pk")), Value(0), output_field=models.IntegerField()
+        ),
+        claims_count=Coalesce(
+            per_restaurant(DealUse.objects, Count("pk")), Value(0), output_field=models.IntegerField()
+        ),
+    )
+
+
+def prefetch_active_deals():
+    """Active deals (with images) per restaurant, exposed as `active_deals_cached`."""
+    now = timezone.now()
+    return Prefetch(
+        "deals",
+        queryset=Deal.objects.filter(
+            is_active=True, start_date__lte=now, end_date__gte=now
+        ).prefetch_related("images"),
+        to_attr="active_deals_cached",
+    )
+
+
+def saved_restaurant_ids(user):
+    """Ids of the user's saved restaurants (one query), or None for anonymous."""
+    if not (user and user.is_authenticated):
+        return None
+    return set(SavedRestaurant.objects.filter(user=user).values_list("restaurant_id", flat=True))
 
 
 class CountryListView(generics.ListAPIView):
@@ -246,6 +309,12 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         if self.action in ["list", "nearby", "discount_buddy"]:
             return RestaurantListSerializer
         return RestaurantDetailSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action in ("list", "discount_buddy"):
+            context["saved_restaurant_ids"] = saved_restaurant_ids(self.request.user)
+        return context
     
     def get_queryset(self):
         queryset = Restaurant.objects.filter(
@@ -263,23 +332,9 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 "categories", "images", "facilities", "cuisines"
             )
         
-        queryset = queryset.annotate(
-            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
-            reviews_count=Count("reviews", distinct=True),
-            active_deals_count=Count(
-                "deals",
-                filter=Q(
-                    deals__is_active=True,
-                    deals__start_date__lte=timezone.now(),
-                    deals__end_date__gte=timezone.now()
-                ),
-                distinct=True
-            ),
-            claims_count=Count(
-                "deal_uses",
-                distinct=True
-            )
-        )
+        queryset = annotate_restaurant_stats(queryset)
+        if self.action in ("list", "discount_buddy"):
+            queryset = queryset.prefetch_related(prefetch_active_deals())
         
         # Filter by category slug if provided
         category_slug = self.request.query_params.get("category")
@@ -342,9 +397,11 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 
                 page = self.paginate_queryset(results)
                 if page is not None:
+                    attach_latest_mystery_visits(page)
                     serializer = self.get_serializer(page, many=True)
                     return self.get_paginated_response(serializer.data)
                 
+                attach_latest_mystery_visits(results)
                 serializer = self.get_serializer(results, many=True)
                 return Response(serializer.data)
             except (ValueError, TypeError):
@@ -352,6 +409,7 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
 
         page = self.paginate_queryset(queryset)
         if page is not None:
+            attach_latest_mystery_visits(page)
             if lat and lon:
                 for restaurant in page:
                     if restaurant.latitude and restaurant.longitude:
@@ -364,6 +422,8 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
+        queryset = list(queryset)
+        attach_latest_mystery_visits(queryset)
         if lat and lon:
             for restaurant in queryset:
                 if restaurant.latitude and restaurant.longitude:
@@ -477,28 +537,14 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        restaurants = Restaurant.objects.filter(
-            is_active=True,
-            verified=True,
-            latitude__isnull=False,
-            longitude__isnull=False
-        ).select_related("city", "city__country").prefetch_related(
-            "images", "facilities", "categories", "cuisines"
-        ).annotate(
-            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
-            reviews_count=Count("reviews", distinct=True),
-            active_deals_count=Count(
-                "deals",
-                filter=Q(
-                    deals__is_active=True,
-                    deals__start_date__lte=timezone.now(),
-                    deals__end_date__gte=timezone.now()
-                ),
-                distinct=True
-            ),
-            claims_count=Count(
-                "deal_uses",
-                distinct=True
+        restaurants = annotate_restaurant_stats(
+            Restaurant.objects.filter(
+                is_active=True,
+                verified=True,
+                latitude__isnull=False,
+                longitude__isnull=False
+            ).select_related("city", "city__country").prefetch_related(
+                "images", "facilities", "categories", "cuisines", prefetch_active_deals()
             )
         )
         
@@ -524,8 +570,13 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
             -getattr(x[0], 'average_rating', 0.0)
         ))
         restaurants = [r[0] for r in restaurants_with_distance]
+        attach_latest_mystery_visits(restaurants)
         
-        serializer = RestaurantListSerializer(restaurants, many=True, context={"request": request})
+        serializer = RestaurantListSerializer(
+            restaurants,
+            many=True,
+            context={"request": request, "saved_restaurant_ids": saved_restaurant_ids(request.user)},
+        )
         return Response(serializer.data)
 
     @action(detail=False, methods=["get"], permission_classes=[AllowAny], url_path="discount-buddy")
@@ -561,9 +612,11 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
                 
                 page = self.paginate_queryset(results)
                 if page is not None:
+                    attach_latest_mystery_visits(page)
                     serializer = self.get_serializer(page, many=True)
                     return self.get_paginated_response(serializer.data)
                 
+                attach_latest_mystery_visits(results)
                 serializer = self.get_serializer(results, many=True)
                 return Response(serializer.data)
                 
@@ -573,9 +626,12 @@ class RestaurantViewSet(viewsets.ReadOnlyModelViewSet):
         # If no coordinates or error, return default ordered list
         page = self.paginate_queryset(queryset)
         if page is not None:
+            attach_latest_mystery_visits(page)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
             
+        queryset = list(queryset)
+        attach_latest_mystery_visits(queryset)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -740,7 +796,12 @@ class DealViewSet(viewsets.ReadOnlyModelViewSet):
         )
         
         if serializer.is_valid():
-            deal_use = serializer.save()
+            try:
+                deal_use = serializer.save()
+            except DealClaimError as exc:
+                # Lost a race: the limits were re-checked under lock. Same shape
+                # as the pre-checks above.
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
             response_serializer = DealUseSerializer(deal_use, context={"request": request})
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         
@@ -951,26 +1012,13 @@ class HomeScreenView(generics.GenericAPIView):
         longitude = params.get("longitude") or params.get("lon")
         now_open = params.get("now_open", "false").lower() == "true"
         # Base queryset
-        queryset = Restaurant.objects.filter(
-            is_active=True,
-            verified=True
-        ).select_related("city", "city__country").prefetch_related(
-            "categories", "cuisines", "images", "facilities", "opening_slots"
-        ).annotate(
-            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=models.FloatField()),
-            reviews_count=Count("reviews", distinct=True),
-            active_deals_count=Count(
-                "deals",
-                filter=Q(
-                    deals__is_active=True,
-                    deals__start_date__lte=timezone.now(),
-                    deals__end_date__gte=timezone.now()
-                ),
-                distinct=True
-            ),
-            claims_count=Count(
-                "deal_uses",
-                distinct=True
+        queryset = annotate_restaurant_stats(
+            Restaurant.objects.filter(
+                is_active=True,
+                verified=True
+            ).select_related("city", "city__country").prefetch_related(
+                "categories", "cuisines", "images", "facilities", "opening_slots",
+                prefetch_active_deals(),
             )
         )
         
@@ -995,6 +1043,13 @@ class HomeScreenView(generics.GenericAPIView):
         if cuisine_id:
             queryset = queryset.filter(cuisines__id=cuisine_id)
         
+        # Evaluate the (annotated, prefetched) queryset exactly once; every
+        # section below is derived from this list in Python.
+        # Ordered by pk so ties in the Python sorts below are deterministic
+        # (the old unordered query effectively returned pk order).
+        candidates = list(queryset.order_by("id"))
+        attach_latest_mystery_visits(candidates)
+
         # Nearest restaurants - infinite radius, sorted by distance in ascending order
         nearby_restaurants = []
         if latitude and longitude:
@@ -1003,7 +1058,7 @@ class HomeScreenView(generics.GenericAPIView):
                 lon = float(longitude)
                 
                 restaurants_with_distance = []
-                for restaurant in queryset:
+                for restaurant in candidates:
                     if restaurant.latitude and restaurant.longitude:
                         dist_km = calculate_distance(
                             lat, lon,
@@ -1038,9 +1093,7 @@ class HomeScreenView(generics.GenericAPIView):
                     r._distance_miles = km_to_miles(dist_km)
             return res_list
         
-        # Materialised once and reused, since both the "now open" and "top 10"
-        # sections need every candidate in memory anyway.
-        restaurants_for_top = list(queryset)
+        restaurants_for_top = candidates
 
         # Now Open — evaluated in Python so split shifts and overnight windows
         # (e.g. 22:00-02:00) are honoured, which a plain time BETWEEN cannot do.
@@ -1061,22 +1114,43 @@ class HomeScreenView(generics.GenericAPIView):
         top_10 = populate_distances(top_10)
         
         # Featured restaurants
-        featured = list(queryset.filter(is_featured=True).order_by("-created_at")[:10])
+        featured = sorted(
+            (r for r in candidates if r.is_featured),
+            key=lambda r: r.created_at,
+            reverse=True,
+        )[:10]
         featured = populate_distances(featured)
 
-        # Favourites (Saved restaurants)
+        # Favourites (Saved restaurants) — same order as the saved list, but
+        # loaded with the same annotations/prefetches as everything else.
         favourites = []
         if request.user.is_authenticated:
-            saved_restaurants = SavedRestaurant.objects.filter(
-                user=request.user
-            ).select_related("restaurant", "restaurant__city").prefetch_related(
-                "restaurant__images", "restaurant__cuisines", "restaurant__deals"
+            saved_ids = list(
+                SavedRestaurant.objects.filter(user=request.user).values_list("restaurant_id", flat=True)
             )
-            favourites = [sr.restaurant for sr in saved_restaurants]
-            favourites = populate_distances(favourites)
+            if saved_ids:
+                by_id = {r.id: r for r in annotate_restaurant_stats(
+                    Restaurant.objects.filter(id__in=saved_ids)
+                    .select_related("city", "city__country")
+                    .prefetch_related(
+                        "images", "cuisines", "opening_slots", prefetch_active_deals(),
+                    )
+                )}
+                favourites = [by_id[i] for i in saved_ids if i in by_id]
+                attach_latest_mystery_visits(favourites)
+                favourites = populate_distances(favourites)
 
         # All restaurants (card format) – sorted by most deals first, then visitors scanned QR/claimed deal, then rating
-        all_restaurants = list(queryset.order_by("-active_deals_count", "-claims_count", "-average_rating", "-is_featured", "-created_at"))
+        all_restaurants = sorted(
+            candidates,
+            key=lambda r: (
+                -r.active_deals_count,
+                -r.claims_count,
+                -r.average_rating,
+                not r.is_featured,
+                -r.created_at.timestamp(),
+            ),
+        )
         all_restaurants = populate_distances(all_restaurants)
 
         # Aggregate everything in section priority order for normalization.
@@ -1096,19 +1170,15 @@ class HomeScreenView(generics.GenericAPIView):
         all_cuisines_ids = set()
         
         # Build Restaurants Dictionary
+        saved_ids_ctx = saved_restaurant_ids(request.user)
+        serializer_context = {"request": request, "saved_restaurant_ids": saved_ids_ctx}
         restaurants_dict = {}
         for r in all_encountered_restaurants:
-            restaurants_dict[str(r.id)] = HomeScreenRestaurantSerializer(r, context={"request": request}).data
+            restaurants_dict[str(r.id)] = HomeScreenRestaurantSerializer(r, context=serializer_context).data
             
-            # Efficiently collect IDs for deals and cuisines
-            # Note: We use the already prefetched deals/cuisines
-            now = timezone.now()
-            all_deals_ids.update(r.deals.filter(
-                is_active=True,
-                start_date__lte=now,
-                end_date__gte=now
-            ).values_list("id", flat=True))
-            all_cuisines_ids.update(r.cuisines.values_list("id", flat=True))
+            # Both come from the prefetch cache: no per-restaurant queries.
+            all_deals_ids.update(d.id for d in r.active_deals_cached)
+            all_cuisines_ids.update(c.id for c in r.cuisines.all())
 
         # Build Deals Dictionary
         active_deals = Deal.objects.filter(id__in=all_deals_ids).select_related("restaurant")
@@ -1249,7 +1319,11 @@ class ReviewViewSet(viewsets.ModelViewSet):
         return ReviewSerializer
     
     def get_queryset(self):
-        return Review.objects.select_related("user", "restaurant")
+        qs = Review.objects.select_related("user", "user__profile", "restaurant")
+        if self.action in ("update", "partial_update", "destroy"):
+            # Reads stay public; only the author may modify a review.
+            return qs.filter(user=self.request.user)
+        return qs
     
     def get_permissions(self):
         if self.action in ["create", "update", "partial_update", "destroy"]:
@@ -2560,6 +2634,7 @@ class RestaurantPartnerRequestViewSet(mixins.CreateModelMixin, viewsets.GenericV
     queryset = RestaurantPartnerRequest.objects.all()
     serializer_class = RestaurantPartnerRequestSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [PartnerRequestThrottle]
 
     def perform_create(self, serializer):
         instance = serializer.save()

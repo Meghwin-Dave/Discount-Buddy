@@ -233,6 +233,10 @@ class Restaurant(TimeStampedModel, SoftDeleteModel):
         """Return the most recent submitted mystery visit, if any."""
         from .models import MysteryVisit  # local import to avoid circulars
 
+        # Bulk-loaded by services.attach_latest_mystery_visits() for list views.
+        if hasattr(self, "_latest_mystery_visit_cached"):
+            return self._latest_mystery_visit_cached
+
         return (
             MysteryVisit.objects.filter(
                 restaurant=self, status=MysteryVisit.STATUS_SUBMITTED
@@ -838,6 +842,8 @@ class MysteryVisit(TimeStampedModel):
             models.Index(fields=["restaurant", "scheduled_for"]),
             models.Index(fields=["mystery_guest", "scheduled_for"]),
             models.Index(fields=["status", "scheduled_for"]),
+            # Latest submitted visit per restaurant (leaderboard score).
+            models.Index(fields=["restaurant", "status", "-submitted_at"], name="mysteryvisit_latest_idx"),
         ]
 
     def __str__(self):

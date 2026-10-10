@@ -33,8 +33,15 @@ from .models import (
 )
 
 
+def _first_primary_image(images_manager):
+    """Primary image if flagged, else the first one. Reads the prefetch cache
+    when the relation was prefetched instead of issuing 1-2 queries per row."""
+    images = list(images_manager.all())
+    return next((img for img in images if img.is_primary), None) or (images[0] if images else None)
+
+
 def _get_primary_restaurant_image_url(restaurant, request=None):
-    primary_img = restaurant.images.filter(is_primary=True).first() or restaurant.images.first()
+    primary_img = _first_primary_image(restaurant.images)
     if not primary_img:
         return None
     urls = ImageProcessingService.get_image_urls(primary_img, request=request)
@@ -42,11 +49,35 @@ def _get_primary_restaurant_image_url(restaurant, request=None):
 
 
 def _get_primary_deal_image_url(deal, request=None):
-    primary_img = deal.images.filter(is_primary=True).first() or deal.images.first()
+    primary_img = _first_primary_image(deal.images)
     if not primary_img:
         return None
     urls = ImageProcessingService.get_image_urls(primary_img, request=request)
     return urls.get("large") or urls.get("medium")
+
+
+def _is_favourite(serializer, obj):
+    """Uses the per-request saved-id set when the view supplied one."""
+    request = serializer.context.get("request")
+    if not (request and request.user.is_authenticated):
+        return False
+    saved_ids = serializer.context.get("saved_restaurant_ids")
+    if saved_ids is not None:
+        return obj.id in saved_ids
+    return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
+
+
+def _active_deals(restaurant):
+    """Active deals, from the view's Prefetch(to_attr=...) when available."""
+    cached = getattr(restaurant, "active_deals_cached", None)
+    if cached is not None:
+        return cached
+    from django.utils import timezone
+
+    now = timezone.now()
+    return restaurant.deals.filter(is_active=True, start_date__lte=now, end_date__gte=now)
+
+
 from .services import build_loyalty_progress_payload
 
 
@@ -232,10 +263,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         return False
     
     def get_is_favourite(self, obj):
-        request = self.context.get("request")
-        if request and request.user.is_authenticated:
-            return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
-        return False
+        return _is_favourite(self, obj)
 
     
     def create(self, validated_data):
@@ -335,10 +363,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
 
         
     def get_is_favourite(self, obj):
-        request = self.context.get("request")
-        if request and request.user.is_authenticated:
-            return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
-        return False
+        return _is_favourite(self, obj)
         
     def get_primary_image(self, obj):
         return _get_primary_restaurant_image_url(obj, self.context.get("request"))
@@ -376,14 +401,7 @@ class RestaurantListSerializer(serializers.ModelSerializer):
         return round(value, 2) if isinstance(value, (int, float)) else None
 
     def get_active_deals(self, obj):
-        from django.utils import timezone
-        now = timezone.now()
-        active_deals = obj.deals.filter(
-            is_active=True,
-            start_date__lte=now,
-            end_date__gte=now
-        )
-        return DealListSerializer(active_deals, many=True, context=self.context).data
+        return DealListSerializer(_active_deals(obj), many=True, context=self.context).data
 
 
 
@@ -1093,10 +1111,7 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         return obj.is_open_now()
     
     def get_is_favourite(self, obj):
-        request = self.context.get("request")
-        if request and request.user.is_authenticated:
-            return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
-        return False
+        return _is_favourite(self, obj)
         
     def get_has_user_reviewed(self, obj):
         request = self.context.get("request")
@@ -1194,10 +1209,17 @@ class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
         }
 
     def get_average_rating(self, obj):
-        return round(float(getattr(obj, 'average_rating', obj.get_average_rating()) or 0.0), 1)
+        # getattr's default is evaluated eagerly, so only fall back when not annotated.
+        value = getattr(obj, 'average_rating', None)
+        if value is None:
+            value = obj.get_average_rating()
+        return round(float(value or 0.0), 1)
 
     def get_review_count(self, obj):
-        return getattr(obj, 'reviews_count', obj.get_reviews_count()) or 0
+        value = getattr(obj, 'reviews_count', None)
+        if value is None:
+            value = obj.get_reviews_count()
+        return value or 0
 
     def get_distance_km(self, obj):
         dist = getattr(obj, '_distance', None)
@@ -1219,19 +1241,10 @@ class HomeScreenRestaurantSerializer(serializers.ModelSerializer):
         return _get_primary_restaurant_image_url(obj, self.context.get("request"))
 
     def get_is_favourite(self, obj):
-        request = self.context.get("request")
-        if request and request.user.is_authenticated:
-            return SavedRestaurant.objects.filter(user=request.user, restaurant=obj).exists()
-        return False
+        return _is_favourite(self, obj)
 
     def get_deals(self, obj):
-        from django.utils import timezone
-        now = timezone.now()
-        return list(obj.deals.filter(
-            is_active=True,
-            start_date__lte=now,
-            end_date__gte=now
-        ).values_list("id", flat=True))
+        return [deal.id for deal in _active_deals(obj)]
 
 
 class MysteryEvidenceSerializer(serializers.ModelSerializer):

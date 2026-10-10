@@ -1,4 +1,4 @@
-import random
+import secrets
 from datetime import timedelta
 
 import threading
@@ -17,6 +17,13 @@ from drf_yasg.utils import swagger_auto_schema
 import jwt
 import requests
 from jwt.algorithms import RSAAlgorithm
+
+from .throttles import (
+    AuthIPThrottle,
+    OTPSendEmailThrottle,
+    OTPVerifyEmailThrottle,
+    UsernameCheckThrottle,
+)
 
 from .account_deletion import delete_account_with_otp, send_account_deletion_otp
 from .models import UserProfile, RegistrationOTP, PasswordResetOTP
@@ -45,6 +52,7 @@ class RegisterInitView(APIView):
     The email will later be used as the username as well.
     """
 
+    throttle_classes = [AuthIPThrottle, OTPSendEmailThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -61,7 +69,7 @@ class RegisterInitView(APIView):
         )
 
         # Generate a 4-digit numeric OTP.
-        otp_code = f"{random.randint(0, 9999):04d}"
+        otp_code = f"{secrets.randbelow(10000):04d}"
         expires_at = timezone.now() + timedelta(minutes=10)
 
         RegistrationOTP.objects.create(
@@ -97,6 +105,7 @@ class ResendOTPView(APIView):
     Endpoint: POST /user/api/users/register/resend-otp
     """
 
+    throttle_classes = [AuthIPThrottle, OTPSendEmailThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -139,7 +148,7 @@ class ResendOTPView(APIView):
             )
 
         # Generate new OTP
-        otp_code = f"{random.randint(0, 9999):04d}"
+        otp_code = f"{secrets.randbelow(10000):04d}"
         expires_at = timezone.now() + timedelta(minutes=10)
 
         # Create new OTP record
@@ -174,6 +183,7 @@ class VerifyOTPView(APIView):
     Stage 2: verify OTP code.
     """
 
+    throttle_classes = [AuthIPThrottle, OTPVerifyEmailThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -228,6 +238,7 @@ class RegisterCompleteView(APIView):
     Requires that the OTP has already been verified (or verifies it again here).
     """
 
+    throttle_classes = [AuthIPThrottle, OTPVerifyEmailThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -306,6 +317,7 @@ class CheckUsernameAvailabilityView(APIView):
     Endpoint: GET /user/api/users/check-username?username=desired_username
     """
 
+    throttle_classes = [UsernameCheckThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -378,6 +390,7 @@ class MeView(APIView):
 
 
 class LoginView(TokenObtainPairView):
+    throttle_classes = [AuthIPThrottle]
     permission_classes = [permissions.AllowAny]
     serializer_class = CustomTokenObtainPairSerializer
 
@@ -545,6 +558,7 @@ class DeleteAccountInitView(APIView):
     Step 1: Send OTP for account deletion.
     """
 
+    throttle_classes = [OTPSendEmailThrottle]
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
@@ -560,6 +574,7 @@ class DeleteAccountView(APIView):
     Step 2: Verify OTP and delete account.
     """
 
+    throttle_classes = [OTPVerifyEmailThrottle]
     permission_classes = [permissions.IsAuthenticated]
 
     def delete(self, request, *args, **kwargs):
@@ -616,6 +631,7 @@ class PasswordResetRequestView(APIView):
     Step 1: Accept email and send a 4-digit OTP for password reset.
     """
 
+    throttle_classes = [AuthIPThrottle, OTPSendEmailThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -631,7 +647,7 @@ class PasswordResetRequestView(APIView):
         )
 
         # Generate a 4-digit numeric OTP.
-        otp_code = f"{random.randint(0, 9999):04d}"
+        otp_code = f"{secrets.randbelow(10000):04d}"
         expires_at = timezone.now() + timedelta(minutes=10)
 
         PasswordResetOTP.objects.create(
@@ -665,6 +681,7 @@ class PasswordResetVerifyOTPView(APIView):
     Optional Step 2: Verify the 4-digit OTP separately.
     """
 
+    throttle_classes = [AuthIPThrottle, OTPVerifyEmailThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
@@ -710,6 +727,7 @@ class PasswordResetConfirmView(APIView):
     Supports both direct reset and following a verify-otp step.
     """
 
+    throttle_classes = [AuthIPThrottle, OTPVerifyEmailThrottle]
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
