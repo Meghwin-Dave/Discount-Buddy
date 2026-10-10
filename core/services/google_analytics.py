@@ -1,3 +1,5 @@
+from django.conf import settings
+
 try:
     from google.analytics.data_v1beta import BetaAnalyticsDataClient
     from google.analytics.data_v1beta.types import (
