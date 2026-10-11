@@ -657,9 +657,10 @@ class NotificationService:
         recipients = list(NotificationService.resolve_campaign_recipients(campaign.audience, campaign.restaurant))
         payload = NotificationService.build_campaign_payload(campaign, image_url=image_url)
 
-        created_ids = []
+        created_count = 0
         chunk_size = 500
         try:
+            from .tasks import send_bulk_push_notifications
             for i in range(0, len(recipients), chunk_size):
                 chunk = recipients[i : i + chunk_size]
                 notifications = [
@@ -675,17 +676,15 @@ class NotificationService:
                     for user in chunk
                 ]
                 created = Notification.objects.bulk_create(notifications)
-                created_ids.extend(str(n.id) for n in created)
+                created_count += len(created)
+                # One push task per chunk so work is spread across workers
+                send_bulk_push_notifications.delay([str(n.id) for n in created])
 
-            if created_ids:
-                from .tasks import send_bulk_push_notifications
-                send_bulk_push_notifications.delay(created_ids)
-
-            campaign.recipient_count = len(created_ids)
+            campaign.recipient_count = created_count
             campaign.status = AdminNotificationCampaign.STATUS_SENT
             campaign.error_message = ""
             campaign.save(update_fields=["recipient_count", "status", "error_message", "updated_at"])
-            return len(created_ids)
+            return created_count
         except Exception as exc:
             campaign.status = AdminNotificationCampaign.STATUS_FAILED
             campaign.error_message = str(exc)

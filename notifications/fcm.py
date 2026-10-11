@@ -235,3 +235,44 @@ def send_fcm_multicast(
     except Exception as e:
         logger.error(f"Failed to send FCM multicast: {str(e)}")
         return {"success_count": 0, "failure_count": len(tokens)}
+
+
+def send_fcm_batch(items: list) -> list:
+    """
+    Send many distinct messages in one go via messaging.send_each (max 500 per call).
+
+    Each item is a dict with keys: token, title, body, data (optional), image_url (optional).
+    Returns a list of (sent: bool, error) tuples aligned with ``items``.
+    """
+    if not items:
+        return []
+    if initialize_firebase() is None:
+        logger.warning("Firebase not initialized, skipping batch push")
+        return [(False, None)] * len(items)
+
+    from firebase_admin import messaging
+
+    results = []
+    for start in range(0, len(items), 500):
+        chunk = items[start : start + 500]
+        messages = [
+            messaging.Message(
+                notification=messaging.Notification(
+                    title=item["title"],
+                    body=item["body"],
+                    image=item.get("image_url"),
+                ),
+                data=_sanitize_data(item.get("data")),
+                token=item["token"],
+            )
+            for item in chunk
+        ]
+        try:
+            response = messaging.send_each(messages)
+            results.extend(
+                (r.success, None if r.success else r.exception) for r in response.responses
+            )
+        except Exception as e:
+            logger.error(f"Failed to send FCM batch: {str(e)}")
+            results.extend([(False, e)] * len(chunk))
+    return results

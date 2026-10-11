@@ -350,7 +350,7 @@ else:
     CELERY_BROKER_URL = REDIS_URL or "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
     # Set to False in production to ensure true async processing
-    CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "True").lower() == "true"
+    CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
 
 CELERY_TASK_EAGER_PROPAGATES = True
 

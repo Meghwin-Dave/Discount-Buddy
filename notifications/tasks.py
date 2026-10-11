@@ -126,68 +126,72 @@ def send_push_notification(notification_id: str):
 @shared_task
 def send_bulk_push_notifications(notification_ids: List[str]):
     """
-    Send push notifications in bulk (for favorite deal notifications).
-    Processes notifications in chunks to avoid overwhelming FCM.
-    
+    Send push notifications in bulk using FCM batch sends.
+
+    Tokens are loaded in a single query, messages are sent via send_each in
+    chunks of 500, and stale tokens are deactivated with one UPDATE.
+
     Args:
         notification_ids: List of notification UUIDs to send
     """
     try:
-        from .models import Notification
-        from .fcm import send_fcm_message
-        
-        notifications = Notification.objects.filter(
-            id__in=notification_ids
-        ).select_related("user").prefetch_related("user__device_tokens")
-        
-        total_sent = 0
-        total_errors = 0
-        
-        for notification in notifications:
-            device_tokens = notification.user.device_tokens.filter(is_active=True)
-            
-            # Prepare data payload with notification metadata
+        from firebase_admin import messaging
+        from .models import Notification, DeviceToken
+        from .fcm import send_fcm_batch
+
+        notifications = {
+            n.id: n for n in Notification.objects.filter(id__in=notification_ids)
+        }
+        tokens = DeviceToken.objects.filter(
+            user_id__in={n.user_id for n in notifications.values()}, is_active=True
+        ).values_list("token", "user_id")
+
+        by_user = {}
+        for token, user_id in tokens:
+            by_user.setdefault(user_id, []).append(token)
+
+        items = []
+        for notification in notifications.values():
             fcm_data = (notification.payload or {}).copy()
             fcm_data.update({
                 "notification_id": str(notification.id),
                 "notification_type": notification.notification_type,
             })
-            
             if notification.source_id:
                 fcm_data["source_id"] = str(notification.source_id)
             if notification.source_type:
                 fcm_data["source_type"] = notification.source_type
 
-            for device_token in device_tokens:
-                try:
-                    sent, error = send_fcm_message(
-                        token=device_token.token,
-                        title=notification.title,
-                        body=notification.message,
-                        data=fcm_data,
-                        image_url=(notification.payload or {}).get("image"),
-                    )
-                    
-                    if sent:
-                        total_sent += 1
-                    elif error:
-                        total_errors += 1
-                        # Deactivate stale tokens in bulk flow too
-                        from firebase_admin import messaging
-                        if isinstance(error, (messaging.UnregisteredError, messaging.SenderIdMismatchError)):
-                            device_token.is_active = False
-                            device_token.save(update_fields=["is_active", "updated_at"])
-                            logger.info(f"Deactivated stale token in bulk flow for {device_token.user.email}")
-                except Exception as e:
-                    total_errors += 1
-                    logger.error(
-                        f"Failed to send bulk push to token {device_token.token[:20]}...: {str(e)}"
-                    )
-        
+            for token in by_user.get(notification.user_id, []):
+                items.append({
+                    "token": token,
+                    "title": notification.title,
+                    "body": notification.message,
+                    "data": fcm_data,
+                    "image_url": (notification.payload or {}).get("image"),
+                })
+
+        results = send_fcm_batch(items)
+
+        total_sent = 0
+        total_errors = 0
+        stale_tokens = []
+        for item, (sent, error) in zip(items, results):
+            if sent:
+                total_sent += 1
+            elif error:
+                total_errors += 1
+                if isinstance(error, (messaging.UnregisteredError, messaging.SenderIdMismatchError)):
+                    stale_tokens.append(item["token"])
+
+        if stale_tokens:
+            DeviceToken.objects.filter(token__in=stale_tokens).update(is_active=False)
+            logger.info(f"Deactivated {len(stale_tokens)} stale tokens in bulk flow")
+
         logger.info(
             f"Bulk push notifications sent: {total_sent} success, {total_errors} errors"
         )
-        
+
     except Exception as e:
         logger.error(f"Error sending bulk push notifications: {str(e)}")
         # Re-raise to trigger Celery retry
